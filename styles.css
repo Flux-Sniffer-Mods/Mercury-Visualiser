@@ -1,0 +1,180 @@
+/* Mercury Visualiser — on/off buttons shown in the corner of graph views. */
+
+.mercury-toolbar {
+	position: absolute;
+	top: var(--size-4-2, 8px);
+	left: var(--size-4-2, 8px);
+	z-index: 3;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px;
+	border-radius: var(--radius-m, 8px);
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	box-shadow: var(--shadow-s);
+	opacity: 0.85;
+	transition: opacity 120ms ease;
+}
+
+.mercury-toolbar:hover,
+.mercury-toolbar:focus-within {
+	opacity: 1;
+}
+
+.mercury-toolbar.is-hidden,
+.mercury-toolbar .is-hidden {
+	display: none;
+}
+
+.mercury-toolbar-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: var(--size-2-2, 4px);
+	border-radius: var(--radius-s, 4px);
+	color: var(--text-faint);
+	cursor: pointer;
+}
+
+.mercury-toolbar-button.is-active {
+	color: var(--interactive-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+/* Radial layout is on, but switched off for this kind of graph in settings. */
+.mercury-toolbar-button.is-active.is-off-here {
+	color: var(--text-muted);
+	background-color: transparent;
+}
+
+.mercury-toolbar-progress {
+	display: none;
+	width: 36px;
+	height: 4px;
+	margin: 0 4px;
+	border-radius: 2px;
+	background: linear-gradient(
+		to right,
+		var(--interactive-accent) calc(var(--mercury-progress, 0) * 100%),
+		var(--background-modifier-border) 0
+	);
+}
+
+.mercury-toolbar-progress.is-visible {
+	display: block;
+}
+
+/* Phones: slightly bigger touch targets. */
+.is-mobile .mercury-toolbar-button {
+	padding: var(--size-4-2, 8px);
+}
+
+/* Settings: tag colour list */
+.mercury-palette-list {
+	max-height: 420px;
+	overflow-y: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	padding: 0 var(--size-4-3, 12px);
+	margin-bottom: var(--size-4-4, 16px);
+}
+
+.mercury-palette-row {
+	padding: var(--size-4-1, 4px) 0;
+}
+
+/* Colour pool editor */
+.mercury-pool-heading {
+	margin: var(--size-4-4, 16px) 0 var(--size-4-1, 4px);
+}
+
+.mercury-pool-bar {
+	height: 10px;
+	border-radius: 5px;
+	margin: 0 0 var(--size-4-3, 12px);
+	border: 1px solid var(--background-modifier-border);
+}
+
+.mercury-pool-swatches {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2, 8px);
+	margin: var(--size-4-2, 8px) 0;
+}
+
+.mercury-pool-swatch {
+	position: relative;
+}
+
+.mercury-pool-swatch input[type="color"] {
+	width: 40px;
+	height: 40px;
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	background: none;
+	cursor: pointer;
+}
+
+.mercury-pool-remove {
+	position: absolute;
+	top: -8px;
+	right: -8px;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border-radius: 50%;
+	font-size: 12px;
+	line-height: 1;
+}
+
+.mercury-pool-add {
+	width: 40px;
+	height: 40px;
+	font-size: 20px;
+}
+
+.mercury-pool-preview {
+	padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+	border-radius: var(--radius-m, 8px);
+	background: var(--graph-background, var(--background-primary));
+	border: 1px solid var(--background-modifier-border);
+}
+
+.mercury-pool-dots,
+.mercury-pool-pies {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: var(--size-4-2, 8px);
+}
+
+.mercury-pool-dot {
+	width: 22px;
+	height: 22px;
+	border-radius: 50%;
+}
+
+.mercury-pool-pie {
+	width: 34px;
+	height: 34px;
+	border-radius: 50%;
+}
+
+.mercury-pool-strip {
+	display: flex;
+	gap: 2px;
+	margin-right: var(--size-4-2, 8px);
+}
+
+.mercury-pool-strip-dot {
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+}
+
+.mercury-pool-dot.is-small {
+	width: 16px;
+	height: 16px;
+}
