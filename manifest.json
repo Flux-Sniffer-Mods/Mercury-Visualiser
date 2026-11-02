@@ -1,7 +1,7 @@
 {
 	"id": "mercury-visualiser",
 	"name": "Mercury Visualiser",
-	"version": "1.4.0",
+	"version": "1.5.0",
 	"minAppVersion": "1.5.0",
 	"description": "Makes the Graph view easier to read: automatic tag colours, links that fan out evenly, pie-chart dots for notes with several tags, labels on lines, and smoother big graphs.",
 	"author": "Flux Sniffer Mods",
