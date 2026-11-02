@@ -37,7 +37,7 @@ export function labelTint(a: number | null, b: number | null): number {
 		g += (c >> 8) & 255;
 		bl += c & 255;
 	}
-	const lift = (v: number) => Math.round(v / cs.length + (255 - v / cs.length) * 0.35);
+	const lift = (v: number) => Math.round(v / cs.length + (255 - v / cs.length) * 0.5);
 	return (lift(r) << 16) | (lift(g) << 8) | lift(bl);
 }
 

@@ -7,8 +7,8 @@ It adds five things, and you can switch each one on or off at any time:
 1. **Tag colours.** Every tag gets its own colour automatically. When you use a new tag, it gets the colour that looks most different from the ones you already have. The colours come from a picture of the planet Mercury.
 2. **Spread-out links.** A note's links fan out evenly all the way around it, like the slices of a pie, instead of all pointing one way.
 3. **Pie-chart dots.** A note with several tags shows all of their colours: as a thin coloured ring around its dot, or as a little pie chart.
-4. **Line labels.** Each line between two notes shows where the link was written, for example the name of the video both people were in.
-5. **Smoother big graphs.** Parts of the graph you can't see aren't drawn, and when you zoom far out the dots blend into a soft coloured map.
+4. **Line labels.** Each line between two notes shows where the link was written, for example the name of the video both people were in, tinted with the colours of the two notes.
+5. **Smoother big graphs.** Parts of the graph you can't see aren't drawn, less important dots and lines drop away as you zoom out, and far out the dots blend into a soft coloured map.
 
 It was made for the Project Mercury vault, but it works with any vault.
 
@@ -194,12 +194,14 @@ To keep the graph tidy:
 - **Labels never sit on top of each other** or on top of note names.
 - **When several lines from one note share a label**, it is shown once.
 - **Only lines on screen** get labels, starting from the middle.
+- **Labels are coloured** with a blend of the tag colours of the two notes their line joins. A label between notes without tag colours stays plain.
 
 ### Settings
 
 | Setting | What it does |
 | --- | --- |
 | Label with | "Its own line" (for example `asdfmovie4`, or `Taskmaster UK › S3` as above), "The listing" (`asdf`), or "Both" (`asdf › asdfmovie4`). |
+| Colour the labels | Tint labels with their notes' colours, or keep them plain. |
 | Most labels at once | The most labels shown together. Fewer is tidier and faster. |
 
 ## Smoother big graphs
@@ -207,15 +209,18 @@ To keep the graph tidy:
 This works like "level of detail" in video games: the graph draws less when you can't see it.
 
 - **Zoomed in:** notes and lines outside the screen aren't drawn.
+- **Zooming out:** the least important shapes drop away bit by bit, like a map that hides small towns before cities. Lines go first, starting with lines to notes that have only one link, then the smallest dots. Busy notes and their main links stay. Pointing at a note always shows it, its neighbours and their lines in full.
 - **Zoomed far out:** the tiny dots and lines fade into a soft map. Each area is coloured by the tags of the notes in it, and is lighter where notes are packed tightly. Zoom back in and the dots return.
 
-In testing with the Project Mercury vault (7,549 dots), the graph drew about 2.5 times faster when zoomed in, and about 8 times faster when zoomed out.
+In testing with the Project Mercury vault (7,549 dots), the graph drew about 2.5 times faster when zoomed in, about 1.3 to 1.7 times faster part-way out, and about 8 times faster when zoomed right out.
 
 ### Settings
 
 | Setting | What it does |
 | --- | --- |
 | Skip what's off screen | Don't draw notes and lines outside the view. |
+| Fewer shapes when zoomed out | Drop the least important lines and dots as you zoom out. |
+| How much to drop | How many of the dots are gone by the time the density map takes over (lines go a little sooner). |
 | Density map when zoomed out | Show the soft map instead of tiny dots when far out. |
 | Switch to the map below | How small the dots get (in pixels) before the map takes over completely. It starts fading in at about twice this size. |
 | Map softness | How blurred the map is, from 0 (crisp) to 3 (very soft). |

@@ -57,7 +57,7 @@ describe("label colours", () => {
 		const t = labelTint(0xff0000, 0x0000ff);
 		expect((t >> 16) & 255).toBeGreaterThan(150);
 		expect(t & 255).toBeGreaterThan(150);
-		expect((t >> 8) & 255).toBe(Math.round(0 + 255 * 0.35));
+		expect((t >> 8) & 255).toBe(Math.round(0 + 255 * 0.5));
 	});
 
 	it("uses the only coloured note when the other has no colour", () => {
