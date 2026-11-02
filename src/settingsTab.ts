@@ -366,14 +366,20 @@ export class MercurySettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Colour the labels")
-			.setDesc("Tint each label with a blend of the tag colours of the two notes its line joins. Labels between notes without tag colours stay plain.")
-			.addToggle((t) =>
-				t.setValue(s.linkLabelColours).onChange(async (v) => {
-					s.linkLabelColours = v;
-					await plugin.saveSettings();
-					plugin.graphs.forEach((c) => c.requestRedraw());
-				}),
+			.setName("Colour labels by")
+			.setDesc("The two notes: a blend of the tag colours of the notes the line joins. Everyone in the listing: a blend of the tag colours of everyone listed with it (say, the whole cast of asdfmovie4), weighted towards the tags most of them share.")
+			.addDropdown((d) =>
+				d
+					.addOption("ends", "The two notes it joins")
+					.addOption("listing", "Everyone in the listing")
+					.addOption("off", "Don't colour")
+					.setValue(s.linkLabelColours ? s.linkLabelColourBy : "off")
+					.onChange(async (v) => {
+						s.linkLabelColours = v !== "off";
+						if (v === "ends" || v === "listing") s.linkLabelColourBy = v;
+						await plugin.saveSettings();
+						plugin.graphs.forEach((c) => c.requestRedraw());
+					}),
 			);
 
 		new Setting(containerEl)

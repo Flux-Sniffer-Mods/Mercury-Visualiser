@@ -194,14 +194,14 @@ To keep the graph tidy:
 - **Labels never sit on top of each other** or on top of note names.
 - **When several lines from one note share a label**, it is shown once.
 - **Only lines on screen** get labels, starting from the middle.
-- **Labels are coloured** with a blend of the tag colours of the two notes their line joins. A label between notes without tag colours stays plain.
+- **Labels are coloured.** Either with a blend of the tag colours of the two notes the line joins, or with the colours of everyone in the listing, weighted towards the tags most of them share. For example, a Taskmaster series where nearly everyone is a comedian gets the comedian colour. Labels with no tag colours to go on stay plain.
 
 ### Settings
 
 | Setting | What it does |
 | --- | --- |
 | Label with | "Its own line" (for example `asdfmovie4`, or `Taskmaster UK › S3` as above), "The listing" (`asdf`), or "Both" (`asdf › asdfmovie4`). |
-| Colour the labels | Tint labels with their notes' colours, or keep them plain. |
+| Colour labels by | "The two notes it joins", "Everyone in the listing" (weighted towards the main tags), or "Don't colour". |
 | Most labels at once | The most labels shown together. Fewer is tidier and faster. |
 
 ## Smoother big graphs

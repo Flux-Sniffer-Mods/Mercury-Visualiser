@@ -32,6 +32,8 @@ export interface ControllerHost {
 	linkLabel(sourceId: string, targetId: string): string | null;
 	/** Changes whenever link labels may have changed. */
 	labelsVersion(): number;
+	/** The colour of the listing a line comes from, weighted to its main tags. */
+	listingColour(sourceId: string, targetId: string): number | null;
 	/** Link distance from the Graph view's own "Forces" settings. */
 	graphLinkDistance(view: CoreGraphView): number | null;
 	toggleFeature(feature: Feature): void;
@@ -132,8 +134,9 @@ export class GraphController {
 			maxLabels: () => s().linkLabelMax,
 			label: (a, b) => host.linkLabel(a, b),
 			version: () => host.labelsVersion(),
-			colourLabels: () => s().linkLabelColours,
+			labelColourMode: () => (!s().linkLabelColours ? "off" : s().linkLabelColourBy),
 			colourOf: (node) => this.mapColour(node),
+			listingColour: (a, b) => host.listingColour(a, b),
 		});
 		this.detail = new DetailLayer(this.renderer, {
 			culling: () => s().levelOfDetail && s().lodCulling,

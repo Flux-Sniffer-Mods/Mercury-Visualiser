@@ -15,10 +15,18 @@ export interface LinkLabelHost {
 	label(sourceId: string, targetId: string): string | null;
 	/** Changes whenever labels may have changed. */
 	version(): number;
-	/** Tint labels with the colours of the notes their line joins. */
-	colourLabels(): boolean;
+	/** How labels are coloured. */
+	labelColourMode(): "off" | "ends" | "listing";
 	/** A note's tag colour (its colours mixed), or null if it has none. */
 	colourOf(node: CoreGraphNode): number | null;
+	/** The colour of the listing a line comes from (everyone in it, weighted to its main tags). */
+	listingColour(sourceId: string, targetId: string): number | null;
+}
+
+/** Lightens a colour a little so text in it reads on a dark background. */
+export function lightenForLabel(c: number): number {
+	const lift = (v: number) => Math.round(v + (255 - v) * 0.5);
+	return (lift((c >> 16) & 255) << 16) | (lift((c >> 8) & 255) << 8) | lift(c & 255);
 }
 
 /**
@@ -165,7 +173,12 @@ export class LinkLabelLayer {
 				text.text = label;
 			}
 			text.scale.set(scale);
-			const tint = this.host.colourLabels() ? labelTint(this.host.colourOf(hub), this.host.colourOf(other)) : 0xffffff;
+			const mode = this.host.labelColourMode();
+			let tint = 0xffffff;
+			if (mode !== "off") {
+				const listing = mode === "listing" ? this.host.listingColour(link.source.id, link.target.id) : null;
+				tint = listing !== null ? lightenForLabel(listing) : labelTint(this.host.colourOf(hub), this.host.colourOf(other));
+			}
 			if (text.tint !== tint) text.tint = tint;
 
 			// Footprint along the (rotated) text, sampled every few pixels.

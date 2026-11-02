@@ -56,8 +56,10 @@ export interface MercurySettings {
 
 	// 4. Link labels
 	linkLabels: boolean;
-	/** Tint each label with a blend of the colours of the notes its line joins. */
+	/** Tint labels at all. */
 	linkLabelColours: boolean;
+	/** "ends": blend the two notes the line joins; "listing": everyone in the listing, weighted to its main tags. */
+	linkLabelColourBy: "ends" | "listing";
 	linkLabelMode: LabelMode;
 	linkLabelMax: number;
 
@@ -111,6 +113,7 @@ export const DEFAULT_SETTINGS: MercurySettings = {
 
 	linkLabels: true,
 	linkLabelColours: true,
+	linkLabelColourBy: "ends",
 	linkLabelMode: "own",
 	linkLabelMax: 120,
 

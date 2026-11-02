@@ -4,6 +4,7 @@ import { DiagnosticsModal } from "./diagnosticsModal";
 import { GraphController, type ControllerHost } from "./graph/graphController";
 import { GraphManager } from "./graph/graphManager";
 import type { Feature } from "./graph/toolbar";
+import { listingColour } from "./labels/labelColour";
 import { LinkLabelIndex } from "./labels/linkLabelIndex";
 import { LayoutCache } from "./layout/layoutCache";
 import { LayoutRunner } from "./layout/layoutRunner";
@@ -28,6 +29,10 @@ export default class MercuryVisualiserPlugin extends Plugin {
 	labelIndex!: LinkLabelIndex;
 	/** Set once the vault has loaded and tag colours are ready; nothing touches graphs before then. */
 	private ready = false;
+	/** Bumped whenever tag colours may have changed. */
+	private colourEpoch = 0;
+	private listingColours = new Map<string, number | null>();
+	private listingColoursFor = "";
 	private settingTab!: MercurySettingTab;
 
 	async onload(): Promise<void> {
@@ -49,7 +54,10 @@ export default class MercuryVisualiserPlugin extends Plugin {
 				return plugin.settings;
 			},
 			saveSettings: () => this.saveSettings(),
-			onColoursChanged: () => this.graphs?.invalidatePies(),
+			onColoursChanged: () => {
+				this.colourEpoch++;
+				this.graphs?.invalidatePies();
+			},
 		});
 
 		this.labelIndex = new LinkLabelIndex(this.app, () => this.graphs?.forEach((c) => c.requestRedraw()));
@@ -64,6 +72,7 @@ export default class MercuryVisualiserPlugin extends Plugin {
 			colourForTag: (tag) => this.tags.colourForTag(tag),
 			linkLabel: (a, b) => this.labelIndex.label(a, b, this.settings.linkLabelMode),
 			labelsVersion: () => this.labelIndex.version,
+			listingColour: (a, b) => this.listingColour(a, b),
 			graphLinkDistance: (view) => GraphController.linkDistanceOf(view),
 			toggleFeature: (feature) => void this.setFeature(feature, !this.settings[feature]),
 			rerunLayout: (view) => this.graphs.rerunLayout(view),
@@ -133,6 +142,22 @@ export default class MercuryVisualiserPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+	}
+
+	/** The colour of the listing a line comes from: everyone in it, weighted to its main tags. */
+	private listingColour(sourceId: string, targetId: string): number | null {
+		const epoch = `${this.labelIndex.version}|${this.colourEpoch}|${this.settings.tagLevel}`;
+		if (epoch !== this.listingColoursFor) {
+			this.listingColours.clear();
+			this.listingColoursFor = epoch;
+		}
+		const listing = this.labelIndex.listingOf(sourceId, targetId);
+		if (!listing) return null;
+		const known = this.listingColours.get(listing.key);
+		if (known !== undefined) return known;
+		const colour = listingColour(listing.members.map((id) => this.tags.slicesFor(id)));
+		this.listingColours.set(listing.key, colour);
+		return colour;
 	}
 
 	/** Shows how the open Graph view draws its dots, for troubleshooting. */
