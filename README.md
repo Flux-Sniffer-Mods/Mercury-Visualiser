@@ -6,7 +6,7 @@ It adds five things, and you can switch each one on or off at any time:
 
 1. **Tag colours.** Every tag gets its own colour automatically. When you use a new tag, it gets the colour that looks most different from the ones you already have. The colours come from a picture of the planet Mercury.
 2. **Spread-out links.** A note's links fan out evenly all the way around it, like the slices of a pie, instead of all pointing one way.
-3. **Pie-chart dots.** A note with several tags is drawn as a little pie chart, with one slice for each tag colour.
+3. **Pie-chart dots.** A note with several tags shows all of their colours: as a thin coloured ring around its dot, or as a little pie chart.
 4. **Line labels.** Each line between two notes shows where the link was written, for example the name of the video both people were in.
 5. **Smoother big graphs.** Parts of the graph you can't see aren't drawn, and when you zoom far out the dots blend into a soft coloured map.
 
@@ -69,6 +69,7 @@ A lit-up button means that feature is on.
 - Re-spread tag colours
 - Colour new tags now
 - Edit the colours new tags can get
+- Show graph diagnostics
 
 You can give any of these a keyboard shortcut in **Settings > Hotkeys**.
 
@@ -137,18 +138,27 @@ Normally, a note's links can bunch up on one side like a broom. With this on, th
 
 ## Pie-chart dots
 
-A note with more than one tag colour is drawn as a pie chart with a slice for each colour. Slices always come in the same order, so a colour sits in the same place on every dot. The note you have open keeps its highlight ring around its pie.
+Normally a dot can only show one tag colour. With this on, a note with several tag colours shows all of them. Colours always come in the same order, so a colour sits in the same place on every dot.
 
-If tag colours are switched off, the slices use your Graph view colour groups instead.
+There are two styles:
+
+- **Ring around the dot** (the default). The dot stays as it is, with a thin ring of coloured arcs around it, one for each colour. This keeps busy notes calm.
+- **Filled pie.** The whole dot becomes a pie chart, with a slice for each colour. The note you have open keeps its highlight ring around its pie.
+
+By default the colours only appear once you zoom in, at the same point as note names. Zoomed out, dots stay their normal single colour, so the graph doesn't get noisy. Pointing at a note shows the colours of that note and its neighbours, even when zoomed out.
+
+If tag colours are switched off, the dots use your Graph view colour groups instead.
 
 ### Settings
 
 | Setting | What it does |
 | --- | --- |
-| Draw as a pie | Only notes with two or more colours, or every coloured note. |
-| Size slices by tag count | Off: every colour gets an equal slice. On: a colour that covers more of the note's tags gets a bigger slice. |
-| Lines between slices | Thin lines to separate the slices. |
-| Colour tag nodes | When the Graph view shows tags as their own dots, fills each one with its tag's colour. |
+| Style | "Ring around the dot" or "Filled pie". |
+| Only show when zoomed in | Colours fade in with note names as you zoom in. Turn off to always show them. |
+| Show on | Only notes with two or more tag colours, or every note with a tag colour. |
+| Size slices by tag count | Off: every colour gets an equal share. On: a colour that covers more of the note's tags gets a bigger share. |
+| Lines between slices | Thin lines between the slices (filled style only; rings always have small gaps). |
+| Colour tag nodes | When the Graph view shows tags as their own dots, gives each one its tag's colour. |
 
 ## Line labels
 
@@ -168,6 +178,15 @@ asdf:
 
 labels the lines "asdfmovie2" and "asdfmovie4". The label is whatever comes before the colon (or before a dash). Headings above a list count too.
 
+Some titles mean little on their own, like season and episode numbers (`S3`, `E2`, `Season 1`) or roles that appear in lots of notes (`Cast`, `Guests`, `Host`). These get the name of the listing they sit under, so a line from
+
+```
+Taskmaster UK:
+- S3: [[Someone]]
+```
+
+is labelled "Taskmaster UK › S3".
+
 To keep the graph tidy:
 
 - **Labels fade out as you zoom out**, at the same point as note names. This uses the Graph view's own "Text fade threshold" setting (under "Display").
@@ -180,7 +199,7 @@ To keep the graph tidy:
 
 | Setting | What it does |
 | --- | --- |
-| Label with | "Its own line" (for example `asdfmovie4`, or `Lateral › 3` when the line is just a number), "The listing" (`asdf`), or "Both" (`asdf › asdfmovie4`). |
+| Label with | "Its own line" (for example `asdfmovie4`, or `Taskmaster UK › S3` as above), "The listing" (`asdf`), or "Both" (`asdf › asdfmovie4`). |
 | Most labels at once | The most labels shown together. Fewer is tidier and faster. |
 
 ## Smoother big graphs
@@ -207,6 +226,7 @@ In testing with the Project Mercury vault (7,549 dots), the graph drew about 2.5
 - **The Graph view has no official plugin support**, so this plugin works with its insides carefully. If a future Obsidian update changes them, the affected feature turns itself off instead of breaking your graph.
 - **Turning the plugin off doesn't remove the colours it added**, because Obsidian also turns plugins off whenever it closes. To remove them, switch off tag colours first, then turn off the plugin.
 - **Something looks wrong?** Switch that feature off from its button, and the graph goes back to normal.
+- **Colours on dots the wrong size or in the wrong place?** Open the Graph view, then go to **Settings > Mercury Visualiser > Troubleshooting > Graph diagnostics** (or run "Show graph diagnostics" from the command palette). It shows how your Obsidian draws its dots. Press **Copy** and send it to whoever is helping you.
 
 ## Removing the plugin
 
@@ -240,9 +260,11 @@ To try your changes, copy or link this folder into a test vault at `.obsidian/pl
 
 ### Publishing a release
 
-1. Run `npm version minor` (or `patch` for small fixes). This updates the version in `manifest.json` and `versions.json`.
-2. Push with `git push --follow-tags`.
-3. GitHub builds the plugin and publishes a release with the three files. BRAT and manual installs use that release.
+1. Make sure the version number in `manifest.json` and `package.json` has gone up, and that the new version is listed in `versions.json`. On a computer, `npm version minor` (or `patch`) does all three.
+2. Get the change onto `main` (for example by merging a pull request).
+3. On GitHub, open the **Actions** tab, choose **Release**, press **Run workflow**, and pick `main`. This works from a phone too.
+
+GitHub then builds the plugin and publishes a release with the three files, named after the version. BRAT and manual installs use that release. Pushing a tag that matches the version (such as `1.2.0`) does the same.
 
 ## Licence
 

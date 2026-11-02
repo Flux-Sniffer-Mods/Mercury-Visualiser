@@ -150,7 +150,7 @@ export function circleShape(circle: PixiGraphics, centre?: Point | null): Circle
 export function drawRing(g: PixiGraphics, slices: readonly Slice[], radius: number, style: PieStyle): void {
 	g.clear();
 	if (slices.length === 0) return;
-	const width = radius * 0.24;
+	const width = radius * 0.3;
 	const r = radius * 1.1 + width / 2;
 	const angles = sliceAngles(slices, style.weighted);
 	// A small gap between colours instead of dividing lines.
