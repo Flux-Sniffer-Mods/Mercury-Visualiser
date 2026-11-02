@@ -1,0 +1,135 @@
+[
+  {
+    "query": "tag:#Not-Public-Figure  ",
+    "color": {
+      "a": 1,
+      "rgb": 0
+    }
+  },
+  {
+    "query": "tag:#Intellectual-Property  ",
+    "color": {
+      "a": 1,
+      "rgb": 11992858
+    }
+  },
+  {
+    "query": "tag:#Politician ",
+    "color": {
+      "a": 1,
+      "rgb": 8716372
+    }
+  },
+  {
+    "query": "tag:#Author",
+    "color": {
+      "a": 1,
+      "rgb": 7685648
+    }
+  },
+  {
+    "query": "tag:#Actor  ",
+    "color": {
+      "a": 1,
+      "rgb": 179939
+    }
+  },
+  {
+    "query": "tag:#Voice-Actor  ",
+    "color": {
+      "a": 1,
+      "rgb": 2074305
+    }
+  },
+  {
+    "query": "tag:#Athlete ",
+    "color": {
+      "a": 1,
+      "rgb": 1376020
+    }
+  },
+  {
+    "query": "tag:#Online",
+    "color": {
+      "a": 1,
+      "rgb": 15671071
+    }
+  },
+  {
+    "query": "tag:#Music",
+    "color": {
+      "a": 1,
+      "rgb": 13107455
+    }
+  },
+  {
+    "query": "tag:#Comedian  ",
+    "color": {
+      "a": 1,
+      "rgb": 16762880
+    }
+  },
+  {
+    "query": "tag:#Director  ",
+    "color": {
+      "a": 1,
+      "rgb": 1645983
+    }
+  },
+  {
+    "query": "tag:#Interviewer  ",
+    "color": {
+      "a": 1,
+      "rgb": 16734464
+    }
+  },
+  {
+    "query": "tag:#Drag  ",
+    "color": {
+      "a": 1,
+      "rgb": 14701233
+    }
+  },
+  {
+    "query": "tag:#Animator",
+    "color": {
+      "a": 1,
+      "rgb": 27581
+    }
+  },
+  {
+    "query": "tag:#Game-Developer  ",
+    "color": {
+      "a": 1,
+      "rgb": 16746496
+    }
+  },
+  {
+    "query": "tag:#Podcast-Host",
+    "color": {
+      "a": 1,
+      "rgb": 11549499
+    }
+  },
+  {
+    "query": "tag:#Businessperson  ",
+    "color": {
+      "a": 1,
+      "rgb": 9519192
+    }
+  },
+  {
+    "query": "tag:#Presenter  ",
+    "color": {
+      "a": 1,
+      "rgb": 15908170
+    }
+  },
+  {
+    "query": "tag:#Reality-TV  ",
+    "color": {
+      "a": 1,
+      "rgb": 65450
+    }
+  }
+]

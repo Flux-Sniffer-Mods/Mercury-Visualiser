@@ -1,0 +1,43 @@
+name: Release
+
+# Push a tag that matches the version in manifest.json (e.g. 1.0.1) to publish
+# a release that Obsidian, BRAT and manual installs can use.
+on:
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      - name: Check the tag matches manifest.json
+        if: github.event_name == 'push'
+        run: |
+          version=$(node -p "require('./manifest.json').version")
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match manifest version $version" >&2
+            exit 1
+          fi
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag=$(node -p "require('./manifest.json').version")
+          gh release create "$tag" --title "$tag" --generate-notes \
+            main.js manifest.json styles.css
