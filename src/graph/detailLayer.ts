@@ -1,5 +1,5 @@
 import type { CoreGraphNode, CoreGraphRenderer, PixiContainer, PixiSprite } from "./internals";
-import { viewportOf } from "./internals";
+import { highlightOf, viewportOf } from "./internals";
 import { circleShape } from "./pie";
 
 export type DensityStyle = "tags" | "brightness";
@@ -18,6 +18,10 @@ export interface DetailHost {
 	accent(): number;
 	/** Changes whenever node colours may have changed. */
 	colourVersion(): number;
+	/** Drop the least important dots and lines as you zoom out. */
+	thinning(): boolean;
+	/** At most this share (0–1) of dots is dropped, just before the density map takes over. */
+	thinAmount(): number;
 }
 
 type SpriteCtor = new (texture?: unknown) => PixiSprite;
@@ -40,6 +44,10 @@ const SOFTNESS: ReadonlyArray<[number, number]> = [
 /**
  * Level of detail for big graphs:
  * - Zoomed in: anything off screen is skipped when drawing.
+ * - Zooming out: the least important shapes are dropped bit by bit, like a
+ *   map dropping small towns before cities. Lines go first (starting with
+ *   lines to notes with a single link), then the smallest dots. Busy notes
+ *   and their main links stay; the note you point at always shows in full.
  * - Zoomed far out: individual dots and lines give way to a soft density map,
  *   tinted by the tag colours of the notes in each area and lighter where
  *   notes are packed tighter. It fades in gradually as you zoom out.
@@ -63,6 +71,14 @@ export class DetailLayer {
 	private mapUnsupported = false;
 	private graphArea = 0;
 
+	// Thinning out
+	/** How important each note is, 0 (least) … 1 (most), by how many links it has. */
+	private rank = new Map<CoreGraphNode, number>();
+	private rankedFor: { nodes: unknown; length: number } | null = null;
+	private thinApplied: { level: number; highlight: CoreGraphNode | null; nodes: unknown; length: number } | null = null;
+	/** Objects this layer has stopped drawing, so they can be restored exactly. */
+	private hiddenObjects = new Set<{ renderable: boolean }>();
+
 	constructor(private renderer: CoreGraphRenderer, private host: DetailHost) {}
 
 	/** Call after each frame. Returns true if the graph should draw one more frame. */
@@ -80,8 +96,10 @@ export class DetailLayer {
 			this.setCulling(wantCulling);
 		}
 
+		const px = this.typicalNodePx();
+
 		// --- Density map when zoomed far out.
-		const t = this.host.densityMap() && !this.mapUnsupported ? this.mapAmount() : 0;
+		const t = this.host.densityMap() && !this.mapUnsupported ? this.mapAmount(px) : 0;
 		if (t > 0) {
 			redraw = this.ensureMap(view.scale) || redraw;
 			if (this.sprite) {
@@ -96,16 +114,109 @@ export class DetailLayer {
 		}
 		// Once the map has all but taken over, stop drawing the thousands of tiny dots and lines.
 		const hide = t >= 0.9 && !!this.sprite;
-		if (hide !== this.hiddenForMap || (hide && this.frame % 30 === 0)) {
-			this.setElementsHidden(hide);
-			redraw = true;
-		}
+		// --- Thinning out on the way there.
+		const level = this.host.thinning() ? this.thinLevel(px) : 0;
+		redraw = this.applyHiding(hide, level) || redraw;
 		return redraw;
 	}
 
+	/**
+	 * How much to thin out at this zoom: 0 while dots are a comfortable size,
+	 * rising to the chosen amount as they shrink towards the density map.
+	 */
+	private thinLevel(px: number | null): number {
+		if (px === null) return 0;
+		const mapStart = Math.max(0.5, this.host.mapBelowPx()) * 2.2;
+		const start = Math.max(mapStart * 2.5, 7);
+		const t = Math.max(0, Math.min(1, (start - px) / (start - mapStart)));
+		// Quantised, so shapes aren't re-shuffled on every tiny zoom step.
+		return Math.round(t * 20) / 20 * Math.max(0, Math.min(0.95, this.host.thinAmount()));
+	}
+
+	/** Ranks notes by how many links they have (notes that don't exist yet count for less). */
+	private ensureRank(): void {
+		const nodes = this.renderer.nodes;
+		if (this.rankedFor && this.rankedFor.nodes === nodes && this.rankedFor.length === nodes.length) return;
+		const degree = new Map<CoreGraphNode, number>();
+		for (const l of this.renderer.links) {
+			if (l.source) degree.set(l.source, (degree.get(l.source) ?? 0) + 1);
+			if (l.target) degree.set(l.target, (degree.get(l.target) ?? 0) + 1);
+		}
+		const scored = nodes.map((n, i) => ({
+			n,
+			score: (degree.get(n) ?? n.weight ?? 0) * (n.type === "unresolved" ? 0.5 : 1) + (i % 997) * 1e-7,
+		}));
+		scored.sort((a, b) => a.score - b.score);
+		this.rank.clear();
+		const last = Math.max(1, scored.length - 1);
+		scored.forEach((x, i) => this.rank.set(x.n, i / last));
+		this.rankedFor = { nodes, length: nodes.length };
+	}
+
+	/**
+	 * Decides what isn't drawn: everything when the density map has taken
+	 * over, otherwise the least important dots and lines for the current zoom.
+	 * Returns true if anything changed.
+	 */
+	private applyHiding(mapHidden: boolean, level: number): boolean {
+		const nodes = this.renderer.nodes;
+		const highlight = level > 0 ? highlightOf(this.renderer) : null;
+		const prev = this.thinApplied;
+		const same =
+			prev &&
+			this.hiddenForMap === mapHidden &&
+			prev.level === level &&
+			prev.highlight === highlight &&
+			prev.nodes === nodes &&
+			prev.length === nodes.length &&
+			this.frame % 30 !== 0; // re-check now and then: the Graph view may rebuild its shapes
+		if (same) return false;
+		const changed = !prev || this.hiddenForMap !== mapHidden || prev.level !== level || prev.highlight !== highlight;
+		this.hiddenForMap = mapHidden;
+		this.thinApplied = { level, highlight, nodes, length: nodes.length };
+
+		const keep = new Set<CoreGraphNode>();
+		if (highlight) {
+			keep.add(highlight);
+			const ids = new Set([...Object.keys(highlight.forward ?? {}), ...Object.keys(highlight.reverse ?? {})]);
+			for (const n of nodes) if (ids.has(n.id)) keep.add(n);
+		}
+		if (level > 0) this.ensureRank();
+
+		const hidden = new Set<{ renderable: boolean }>();
+		const hide = (o: { renderable: boolean } | null | undefined, off: boolean) => {
+			if (!o) return;
+			if (off) {
+				hidden.add(o);
+				if (o.renderable) o.renderable = false;
+			}
+		};
+		const nodeHidden = (n: CoreGraphNode) => !keep.has(n) && (this.rank.get(n) ?? 1) < level;
+		for (const n of nodes) {
+			const off = mapHidden || (level > 0 && nodeHidden(n));
+			hide(n.circle as unknown as { renderable: boolean } | null, off);
+			hide(n.text as unknown as { renderable: boolean } | null, off && !mapHidden);
+		}
+		for (const l of this.renderer.links) {
+			let off = mapHidden;
+			if (!off && level > 0) {
+				const s = l.source;
+				const t = l.target;
+				const near = !!highlight && (s === highlight || t === highlight);
+				// Lines thin out a little ahead of dots: a line goes when its less important end is low down.
+				off = !near && (nodeHidden(s) || nodeHidden(t) || Math.min(this.rank.get(s) ?? 1, this.rank.get(t) ?? 1) < level * 1.35);
+			}
+			hide(l.line, off);
+			hide(l.arrow, off);
+		}
+		// Bring back anything that should be drawn again.
+		for (const o of this.hiddenObjects) if (!hidden.has(o)) o.renderable = true;
+		this.hiddenObjects = hidden;
+		return changed;
+	}
+
 	/** 0 = zoomed in enough to see nodes, 1 = so far out that only the map is shown. */
-	private mapAmount(): number {
-		const px = this.typicalNodePx();
+	private mapAmount(px: number | null): number {
 		if (px === null) return 0;
 		const below = Math.max(0.5, this.host.mapBelowPx());
 		const start = below * 2.2;
@@ -119,8 +230,9 @@ export class DetailLayer {
 		const sizes: number[] = [];
 		const step = Math.max(1, Math.floor(nodes.length / 48));
 		for (let i = 0; i < nodes.length && sizes.length < 48; i += step) {
-			const c = nodes[i].circle as unknown as { worldTransform?: { a: number; b: number } } | null;
-			if (!c?.worldTransform || !nodes[i].circle) continue;
+			const c = nodes[i].circle as unknown as { worldTransform?: { a: number; b: number }; visible?: boolean } | null;
+			// Dots the Graph view has hidden (off screen) have out-of-date transforms.
+			if (!c?.worldTransform || !nodes[i].circle || c.visible === false) continue;
 			const r = circleShape(nodes[i].circle!).radius;
 			sizes.push(2 * r * Math.hypot(c.worldTransform.a, c.worldTransform.b));
 		}
@@ -156,13 +268,6 @@ export class DetailLayer {
 		}
 	}
 
-	private setElementsHidden(hide: boolean): void {
-		this.hiddenForMap = hide;
-		for (const n of this.renderer.nodes) {
-			if (n.circle) (n.circle as unknown as { renderable: boolean }).renderable = !hide;
-		}
-		for (const l of this.renderer.links) if (l.line) l.line.renderable = !hide;
-	}
 
 	// ------------------------------------------------------------ the map
 
@@ -325,7 +430,8 @@ export class DetailLayer {
 
 	destroy(): void {
 		if (this.cullingOn) this.setCulling(false);
-		if (this.hiddenForMap) this.setElementsHidden(false);
+		for (const o of this.hiddenObjects) o.renderable = true;
+		this.hiddenObjects.clear();
 		if (this.sprite && !this.sprite.destroyed) {
 			this.sprite.parent?.removeChild(this.sprite);
 			this.sprite.destroy();

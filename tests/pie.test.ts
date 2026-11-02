@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { labelTint } from "../src/graph/linkLabelLayer";
 import { circleShape, drawnCircles } from "../src/graph/pie";
 import type { PixiGraphics } from "../src/graph/internals";
 
@@ -48,5 +49,22 @@ describe("measuring a dot", () => {
 	it("falls back to the outline when no shapes are listed", () => {
 		const dot = { getLocalBounds: () => ({ x: 0, y: 0, width: 200, height: 200 }) } as unknown as PixiGraphics;
 		expect(circleShape(dot)).toEqual({ x: 100, y: 100, radius: 100 });
+	});
+});
+
+describe("label colours", () => {
+	it("blends the two notes' colours and lightens them a little", () => {
+		const t = labelTint(0xff0000, 0x0000ff);
+		expect((t >> 16) & 255).toBeGreaterThan(150);
+		expect(t & 255).toBeGreaterThan(150);
+		expect((t >> 8) & 255).toBe(Math.round(0 + 255 * 0.35));
+	});
+
+	it("uses the only coloured note when the other has no colour", () => {
+		expect(labelTint(0x00ff00, null)).toBe(labelTint(0x00ff00, 0x00ff00));
+	});
+
+	it("stays plain when neither note has a colour", () => {
+		expect(labelTint(null, null)).toBe(0xffffff);
 	});
 });

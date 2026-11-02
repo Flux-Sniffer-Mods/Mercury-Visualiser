@@ -132,6 +132,8 @@ export class GraphController {
 			maxLabels: () => s().linkLabelMax,
 			label: (a, b) => host.linkLabel(a, b),
 			version: () => host.labelsVersion(),
+			colourLabels: () => s().linkLabelColours,
+			colourOf: (node) => this.mapColour(node),
 		});
 		this.detail = new DetailLayer(this.renderer, {
 			culling: () => s().levelOfDetail && s().lodCulling,
@@ -139,6 +141,8 @@ export class GraphController {
 			mapBelowPx: () => s().lodMapBelowPx,
 			densityStyle: () => s().lodDensityStyle,
 			softness: () => s().lodMapSoftness,
+			thinning: () => s().levelOfDetail && s().lodThinOut,
+			thinAmount: () => s().lodThinAmount,
 			nodeColour: (node) => this.mapColour(node),
 			accent: () => this.accent,
 			colourVersion: () => this.pieVersion,

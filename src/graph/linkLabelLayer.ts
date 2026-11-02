@@ -15,6 +15,30 @@ export interface LinkLabelHost {
 	label(sourceId: string, targetId: string): string | null;
 	/** Changes whenever labels may have changed. */
 	version(): number;
+	/** Tint labels with the colours of the notes their line joins. */
+	colourLabels(): boolean;
+	/** A note's tag colour (its colours mixed), or null if it has none. */
+	colourOf(node: CoreGraphNode): number | null;
+}
+
+/**
+ * The colour for a label: the average of whichever of its two notes have a
+ * colour, lightened a little so it reads on a dark background. White (no
+ * tint) when neither has one.
+ */
+export function labelTint(a: number | null, b: number | null): number {
+	const cs = [a, b].filter((c): c is number => c !== null);
+	if (cs.length === 0) return 0xffffff;
+	let r = 0;
+	let g = 0;
+	let bl = 0;
+	for (const c of cs) {
+		r += (c >> 16) & 255;
+		g += (c >> 8) & 255;
+		bl += c & 255;
+	}
+	const lift = (v: number) => Math.round(v / cs.length + (255 - v / cs.length) * 0.35);
+	return (lift(r) << 16) | (lift(g) << 8) | lift(bl);
 }
 
 type TextCtor = new (text: string, style?: unknown) => PixiText;
@@ -141,6 +165,8 @@ export class LinkLabelLayer {
 				text.text = label;
 			}
 			text.scale.set(scale);
+			const tint = this.host.colourLabels() ? labelTint(this.host.colourOf(hub), this.host.colourOf(other)) : 0xffffff;
+			if (text.tint !== tint) text.tint = tint;
 
 			// Footprint along the (rotated) text, sampled every few pixels.
 			const half = ((text as unknown as { width: number }).width * view.scale) / 2;

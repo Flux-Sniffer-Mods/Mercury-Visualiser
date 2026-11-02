@@ -366,6 +366,17 @@ export class MercurySettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Colour the labels")
+			.setDesc("Tint each label with a blend of the tag colours of the two notes its line joins. Labels between notes without tag colours stay plain.")
+			.addToggle((t) =>
+				t.setValue(s.linkLabelColours).onChange(async (v) => {
+					s.linkLabelColours = v;
+					await plugin.saveSettings();
+					plugin.graphs.forEach((c) => c.requestRedraw());
+				}),
+			);
+
+		new Setting(containerEl)
 			.setName("Most labels at once")
 			.setDesc("Only lines on screen are labelled, nearest the middle first. Fewer is tidier and faster.")
 			.addSlider((sl) =>
@@ -401,6 +412,33 @@ export class MercurySettingTab extends PluginSettingTab {
 					s.lodCulling = v;
 					await redraw();
 				}),
+			);
+
+		new Setting(containerEl)
+			.setName("Fewer shapes when zoomed out")
+			.setDesc("As you zoom out, the least important lines and dots are dropped bit by bit: lines to notes with one link go first, busy notes stay. The note you point at always shows in full.")
+			.addToggle((t) =>
+				t.setValue(s.lodThinOut).onChange(async (v) => {
+					s.lodThinOut = v;
+					await redraw();
+					this.display();
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName("How much to drop")
+			.setDesc("The share of dots dropped by the time the density map takes over. Lines go a little sooner.")
+			.setDisabled(!s.lodThinOut)
+			.addSlider((sl) =>
+				sl
+					.setLimits(0.1, 0.9, 0.05)
+					.setValue(s.lodThinAmount)
+					.setDisabled(!s.lodThinOut)
+					.setDynamicTooltip()
+					.onChange(async (v) => {
+						s.lodThinAmount = v;
+						await redraw();
+					}),
 			);
 
 		new Setting(containerEl)
