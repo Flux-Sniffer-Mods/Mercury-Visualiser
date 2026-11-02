@@ -86,18 +86,31 @@ describe("finding listings", () => {
 });
 
 describe("label text", () => {
-	const path = ["Series", "Episode 2"];
+	const path = ["Series", "The Pilot"];
 
 	it("offers the line's own title, the listing's, or both", () => {
-		expect(labelFor(path, "own")).toBe("Episode 2");
+		expect(labelFor(path, "own")).toBe("The Pilot");
 		expect(labelFor(path, "listing")).toBe("Series");
-		expect(labelFor(path, "path")).toBe("Series › Episode 2");
+		expect(labelFor(path, "path")).toBe("Series › The Pilot");
+		expect(labelFor(["Series", "Episode 2"], "own")).toBe("Series › Episode 2");
 		expect(labelFor([], "own")).toBeNull();
 	});
 
-	it("puts the listing in front of bare numbers", () => {
+	it("puts the listing in front of numbers and season or episode codes", () => {
 		expect(labelFor(["Lateral", "3"], "own")).toBe("Lateral › 3");
-		expect(labelFor(["Lateral", "Episode 3"], "own")).toBe("Episode 3");
+		expect(labelFor(["Taskmaster UK", "S3"], "own")).toBe("Taskmaster UK › S3");
+		expect(labelFor(["Show", "S6E3"], "own")).toBe("Show › S6E3");
+		expect(labelFor(["Show", "Season 1"], "own")).toBe("Show › Season 1");
+		expect(labelFor(["Show", "S2", "E4"], "own")).toBe("Show › S2 › E4");
+		expect(labelFor(["Show", "Asdfmovie 3"], "own")).toBe("Asdfmovie 3");
+	});
+
+	it("puts the listing in front of generic roles", () => {
+		expect(labelFor(["Garfield (Movie)", "Cast"], "own")).toBe("Garfield (Movie) › Cast");
+		expect(labelFor(["Podcast", "Guests"], "own")).toBe("Podcast › Guests");
+		// On their own line, with nothing above, they stay as they are.
+		expect(labelFor(["Brother"], "own")).toBe("Brother");
+		expect(labelFor(["Cast"], "own")).toBe("Cast");
 	});
 
 	it("shortens the outer part of a long joined label first", () => {

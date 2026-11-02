@@ -49,6 +49,10 @@ export interface MercurySettings {
 	pieWeighted: boolean;
 	pieOutline: boolean;
 	pieTagNodes: boolean;
+	/** "ring": coloured arcs around the normal dot; "filled": the dot becomes a pie. */
+	pieStyle: "ring" | "filled";
+	/** Show slices only when zoomed in, fading in with note names. */
+	pieFade: boolean;
 
 	// 4. Link labels
 	linkLabels: boolean;
@@ -96,6 +100,8 @@ export const DEFAULT_SETTINGS: MercurySettings = {
 	pieWeighted: false,
 	pieOutline: true,
 	pieTagNodes: true,
+	pieStyle: "ring",
+	pieFade: true,
 
 	linkLabels: true,
 	linkLabelMode: "own",

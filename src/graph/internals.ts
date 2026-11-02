@@ -19,13 +19,27 @@ export interface PixiGraphics {
 	children: PixiGraphics[];
 	parent: PixiGraphics | null;
 	destroyed?: boolean;
+	alpha?: number;
+	visible?: boolean;
+	worldTransform?: PixiMatrix;
+	constructor: { name?: string };
 	x?: number;
 	y?: number;
 	position?: { set(x: number, y: number): void };
 	geometry?: {
 		bounds?: { minX: number; minY: number; maxX: number; maxY: number };
 		graphicsData?: Array<{
-			shape?: { type?: number; x?: number; y?: number; radius?: number; width?: number; height?: number };
+			shape?: {
+				type?: number;
+				x?: number;
+				y?: number;
+				radius?: number;
+				width?: number;
+				height?: number;
+				points?: number[];
+			};
+			fillStyle?: { visible?: boolean; alpha?: number; color?: number };
+			lineStyle?: { visible?: boolean; alpha?: number; width?: number };
 		}>;
 	};
 	clear(): this;
@@ -50,6 +64,7 @@ export interface PixiMatrix {
 	d: number;
 	tx: number;
 	ty: number;
+	apply?(p: { x: number; y: number }): { x: number; y: number };
 	applyInverse(p: { x: number; y: number }): { x: number; y: number };
 }
 
@@ -191,6 +206,29 @@ export function graphLeaves(app: App): WorkspaceLeaf[] {
 }
 
 /** Reads the colour of the theme background behind a graph, for slice outlines. */
+/**
+ * How visible note names are at the current zoom (0–1): the Graph view's own
+ * "text fade". Used so labels and slices fade in and out together with names.
+ */
+export function labelFade(renderer: CoreGraphRenderer): number {
+	if (typeof renderer.textAlpha === "number" && Number.isFinite(renderer.textAlpha)) {
+		return Math.max(0, Math.min(1, renderer.textAlpha));
+	}
+	for (const n of renderer.nodes) {
+		if (n.text && !n.text.destroyed && n.type !== "focused") return Math.max(0, Math.min(1, n.text.alpha));
+	}
+	return 1;
+}
+
+/** The note the pointer is over, if any. */
+export function highlightOf(renderer: CoreGraphRenderer): CoreGraphNode | null {
+	try {
+		return renderer.getHighlightNode?.() ?? renderer.highlightNode ?? null;
+	} catch {
+		return renderer.highlightNode ?? null;
+	}
+}
+
 /** The visible part of the graph, in the graph's own (world) coordinates. */
 export interface Viewport {
 	x0: number;
