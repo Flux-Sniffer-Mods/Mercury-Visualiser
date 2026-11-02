@@ -264,14 +264,41 @@ export class MercurySettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Pie-chart dots").setHeading();
 
 		new Setting(containerEl)
-			.setName("Draw pie-chart dots")
-			.setDesc("Split each note's dot into a slice for every tag colour it has.")
+			.setName("Show tag colours on dots")
+			.setDesc("Show every tag colour a note has, not just one.")
 			.addToggle((t) => t.setValue(s.pieNodes).onChange((v) => plugin.setFeature("pieNodes", v)));
 
-		new Setting(containerEl).setName("Draw as a pie").addDropdown((d) =>
+		new Setting(containerEl)
+			.setName("Style")
+			.setDesc("Ring: a thin ring of colours around the normal dot. Filled: the whole dot becomes a pie chart.")
+			.addDropdown((d) =>
+				d
+					.addOption("ring", "Ring around the dot")
+					.addOption("filled", "Filled pie")
+					.setValue(s.pieStyle)
+					.onChange(async (v) => {
+						s.pieStyle = v === "filled" ? "filled" : "ring";
+						await plugin.saveSettings();
+						plugin.graphs.invalidatePies();
+						this.display();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Only show when zoomed in")
+			.setDesc("Colours fade in as you zoom in, at the same point as note names, and stay plain when zoomed out. The note you point at, and its neighbours, always show theirs.")
+			.addToggle((t) =>
+				t.setValue(s.pieFade).onChange(async (v) => {
+					s.pieFade = v;
+					await plugin.saveSettings();
+					plugin.graphs.forEach((c) => c.requestRedraw());
+				}),
+			);
+
+		new Setting(containerEl).setName("Show on").addDropdown((d) =>
 			d
-				.addOption("2", "Notes with two or more colours")
-				.addOption("1", "Every coloured note")
+				.addOption("2", "Notes with two or more tag colours")
+				.addOption("1", "Every note with a tag colour")
 				.setValue(String(s.pieMinColours))
 				.onChange(async (v) => {
 					s.pieMinColours = v === "1" ? 1 : 2;
@@ -293,6 +320,8 @@ export class MercurySettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Lines between slices")
+			.setDesc("Filled style only. The ring style always has small gaps between colours.")
+			.setDisabled(s.pieStyle !== "filled")
 			.addToggle((t) =>
 				t.setValue(s.pieOutline).onChange(async (v) => {
 					s.pieOutline = v;
@@ -436,6 +465,14 @@ export class MercurySettingTab extends PluginSettingTab {
 					plugin.graphs.update();
 				}),
 			);
+
+		// ------------------------------------------------------ troubleshooting
+		new Setting(containerEl).setName("Troubleshooting").setHeading();
+
+		new Setting(containerEl)
+			.setName("Graph diagnostics")
+			.setDesc("If tag colours on dots look the wrong size or in the wrong place, open the Graph view, then press this and send what it shows to whoever is helping you.")
+			.addButton((b) => b.setButtonText("Show").onClick(() => plugin.showDiagnostics()));
 
 		containerEl.scrollTop = scroll;
 	}

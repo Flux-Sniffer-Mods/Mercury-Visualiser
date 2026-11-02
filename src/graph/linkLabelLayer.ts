@@ -6,7 +6,7 @@ import type {
 	PixiText,
 	PixiTextStyle,
 } from "./internals";
-import { viewportOf } from "./internals";
+import { highlightOf, labelFade, viewportOf } from "./internals";
 
 export interface LinkLabelHost {
 	enabled(): boolean;
@@ -63,9 +63,9 @@ export class LinkLabelLayer {
 		const hanger = r.hanger;
 		if (!hanger || !this.ensureClasses()) return false;
 
-		const highlight = r.getHighlightNode?.() ?? r.highlightNode ?? null;
+		const highlight = highlightOf(r);
 		const sample = this.sampleText();
-		const fade = typeof r.textAlpha === "number" ? r.textAlpha : (sample?.alpha ?? 1);
+		const fade = labelFade(r);
 		if (fade < 0.03 && !highlight) return this.hide();
 
 		const view = viewportOf(r);

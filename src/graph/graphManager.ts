@@ -40,6 +40,16 @@ export class GraphManager {
 		for (const c of this.controllers.values()) fn(c);
 	}
 
+	/** The main graph's controller if open, otherwise any graph's. */
+	preferred(): GraphController | undefined {
+		let any: GraphController | undefined;
+		for (const c of this.controllers.values()) {
+			if (c.kind === "graph") return c;
+			any ??= c;
+		}
+		return any;
+	}
+
 	get(view: View): GraphController | undefined {
 		return this.controllers.get(view);
 	}

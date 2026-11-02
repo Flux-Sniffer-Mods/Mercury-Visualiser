@@ -1,5 +1,6 @@
 import { Notice, Plugin, TFile } from "obsidian";
 import { ColourPoolModal } from "./colourPoolModal";
+import { DiagnosticsModal } from "./diagnosticsModal";
 import { GraphController, type ControllerHost } from "./graph/graphController";
 import { GraphManager } from "./graph/graphManager";
 import type { Feature } from "./graph/toolbar";
@@ -134,6 +135,22 @@ export default class MercuryVisualiserPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 
+	/** Shows how the open Graph view draws its dots, for troubleshooting. */
+	showDiagnostics(): void {
+		const controller = this.graphs.preferred();
+		if (!controller) {
+			new Notice("Open the Graph view first, then try again.");
+			return;
+		}
+		let report: string;
+		try {
+			report = controller.diagnostics();
+		} catch (e) {
+			report = `Couldn't read the graph: ${String(e)}`;
+		}
+		new DiagnosticsModal(this.app, `Mercury Visualiser ${this.manifest.version}\n${report}`).open();
+	}
+
 	/** Opens the editor for the colours automatic tag colouring picks from. */
 	openColourPool(afterSave?: () => void): void {
 		new ColourPoolModal(this.app, {
@@ -191,6 +208,12 @@ export default class MercuryVisualiserPlugin extends Plugin {
 				}
 				this.graphs.rerunLayout();
 			},
+		});
+
+		this.addCommand({
+			id: "show-graph-diagnostics",
+			name: "Show graph diagnostics",
+			callback: () => this.showDiagnostics(),
 		});
 
 		this.addCommand({

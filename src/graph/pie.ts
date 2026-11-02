@@ -50,47 +50,121 @@ export interface CircleShape {
 	radius: number;
 }
 
+interface Point {
+	x: number;
+	y: number;
+}
+
 const finite = (...v: number[]) => v.every((n) => Number.isFinite(n));
 
 /**
- * Where the Graph view actually drew a node's circle, in that object's own
- * coordinates. The circle isn't necessarily centred on (0, 0), so the pie is
- * placed on the measured centre rather than assumed to share it.
+ * The circle-like shapes a Graphics object has visibly drawn, as centre +
+ * radius. Filled shapes come first, then outlines (such as a highlight ring).
  */
-export function circleShape(circle: PixiGraphics): CircleShape {
-	// 1. The bounds of what the circle itself drew (ignores anything added on top).
-	try {
-		const b = circle.geometry?.bounds;
-		if (b && finite(b.minX, b.minY, b.maxX, b.maxY) && b.maxX > b.minX && b.maxY > b.minY) {
-			return {
-				x: (b.minX + b.maxX) / 2,
-				y: (b.minY + b.maxY) / 2,
-				radius: Math.min(b.maxX - b.minX, b.maxY - b.minY) / 2,
-			};
-		}
-	} catch {
-		/* fall through */
-	}
-	// 2. The first shape drawn: a circle (centre + radius) or a (rounded) rectangle.
-	const shape = circle.geometry?.graphicsData?.[0]?.shape;
-	if (shape) {
+export function drawnCircles(circle: PixiGraphics): CircleShape[] {
+	const filled: CircleShape[] = [];
+	const outlined: CircleShape[] = [];
+	for (const d of circle.geometry?.graphicsData ?? []) {
+		const shape = d.shape;
+		if (!shape) continue;
+		const fill = d.fillStyle;
+		const line = d.lineStyle;
+		const isFilled = fill ? fill.visible !== false && (fill.alpha ?? 1) > 0 : true;
+		const isOutlined = !!line && line.visible === true && (line.width ?? 0) > 0 && (line.alpha ?? 1) > 0;
+		if (!isFilled && !isOutlined) continue;
+		const out = isFilled ? filled : outlined;
 		const { x = 0, y = 0, width, height, radius } = shape;
-		const rectLike = shape.type === 1 || shape.type === 4;
-		if (rectLike && typeof width === "number" && typeof height === "number" && width > 0 && height > 0) {
-			return { x: x + width / 2, y: y + height / 2, radius: Math.min(width, height) / 2 };
+		if ((shape.type === 1 || shape.type === 4) && typeof width === "number" && typeof height === "number") {
+			if (width > 0 && height > 0) out.push({ x: x + width / 2, y: y + height / 2, radius: Math.min(width, height) / 2 });
+		} else if (shape.type === 3 && typeof width === "number" && typeof height === "number") {
+			if (width > 0 && height > 0) out.push({ x, y, radius: Math.min(width, height) });
+		} else if (typeof radius === "number" && radius > 0) {
+			out.push({ x, y, radius });
+		} else if (Array.isArray(shape.points) && shape.points.length >= 6) {
+			const p = shape.points;
+			let x0 = Infinity;
+			let y0 = Infinity;
+			let x1 = -Infinity;
+			let y1 = -Infinity;
+			for (let i = 0; i + 1 < p.length; i += 2) {
+				x0 = Math.min(x0, p[i]);
+				x1 = Math.max(x1, p[i]);
+				y0 = Math.min(y0, p[i + 1]);
+				y1 = Math.max(y1, p[i + 1]);
+			}
+			if (x1 > x0 && y1 > y0) out.push({ x: (x0 + x1) / 2, y: (y0 + y1) / 2, radius: Math.min(x1 - x0, y1 - y0) / 2 });
 		}
-		if (typeof radius === "number" && radius > 0) return { x, y, radius };
 	}
-	// 3. Whatever is on screen for the object (taken before the pie is added).
+	return [...filled, ...outlined];
+}
+
+/**
+ * Where the Graph view actually drew a node's dot, in the dot object's own
+ * coordinates.
+ *
+ * `centre` is where the note sits in the graph's physics, mapped into the
+ * dot's coordinates: the visible dot is always drawn there, so it's used to
+ * check the measurement. Shapes the dot draws invisibly (like a larger hit
+ * area) are ignored.
+ */
+export function circleShape(circle: PixiGraphics, centre?: Point | null): CircleShape {
+	const hint = centre && finite(centre.x, centre.y) ? centre : null;
+	const shapes = drawnCircles(circle);
+
+	if (shapes.length > 0) {
+		if (!hint) return shapes[0];
+		// The visible shape whose centre is where the note is.
+		let best = shapes[0];
+		let bestD = Infinity;
+		for (const c of shapes) {
+			const d = Math.hypot(c.x - hint.x, c.y - hint.y) / c.radius;
+			if (d < bestD) {
+				bestD = d;
+				best = c;
+			}
+		}
+		if (bestD < 0.35) return best;
+		// Wildly far away: the position can't be trusted, so go by the drawing.
+		if (bestD > 4) return best;
+		// No drawn shape is centred on the note: trust the note's position, keep the drawn size.
+		return { x: hint.x, y: hint.y, radius: best.radius };
+	}
+
+	// No shape data: use what the object shows on screen (before the pie is added).
 	try {
 		const b = circle.getLocalBounds?.();
 		if (b && finite(b.x, b.y, b.width, b.height) && b.width > 0 && b.height > 0) {
-			return { x: b.x + b.width / 2, y: b.y + b.height / 2, radius: Math.min(b.width, b.height) / 2 };
+			const radius = Math.min(b.width, b.height) / 2;
+			return hint ? { x: hint.x, y: hint.y, radius } : { x: b.x + b.width / 2, y: b.y + b.height / 2, radius };
 		}
 	} catch {
 		/* fall through */
 	}
-	return { x: 0, y: 0, radius: 100 };
+	return { x: hint?.x ?? 0, y: hint?.y ?? 0, radius: 100 };
+}
+
+/**
+ * Draws the tag colours as a thin ring of arcs around the normal dot, which
+ * is left as it is. Calmer than a filled pie, especially on big, busy notes.
+ */
+export function drawRing(g: PixiGraphics, slices: readonly Slice[], radius: number, style: PieStyle): void {
+	g.clear();
+	if (slices.length === 0) return;
+	const width = radius * 0.24;
+	const r = radius * 1.1 + width / 2;
+	const angles = sliceAngles(slices, style.weighted);
+	// A small gap between colours instead of dividing lines.
+	const gap = slices.length > 1 ? Math.min(0.22, ((Math.PI * 2) / slices.length) * 0.16) : 0;
+	for (let i = 0; i < slices.length; i++) {
+		const [a0, a1] = angles[i];
+		const s = a0 + gap / 2;
+		const e = a1 - gap / 2;
+		if (e <= s) continue;
+		g.lineStyle(width, slices[i].rgb, 1, 0.5);
+		g.moveTo(Math.cos(s) * r, Math.sin(s) * r);
+		g.arc(0, 0, r, s, e);
+	}
+	g.lineStyle(0);
 }
 
 type GraphicsCtor = new () => PixiGraphics;

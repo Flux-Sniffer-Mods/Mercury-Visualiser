@@ -152,8 +152,66 @@ export function parseListings(text: string): ListedLink[] {
 	return out;
 }
 
-/** Titles like "3", "#12" or "4b" say little on their own. */
-const BARE_NUMBER = /^[#№]?\s*\d{1,4}[a-z]?\.?$/i;
+/**
+ * Titles that say little on their own: numbers and season/episode codes
+ * ("3", "S3", "E12", "S6E3", "Season 1", "Part 2") …
+ */
+const CODE =
+	/^(?:(?:[#№]|no\.?|s|e|ep\.?|episode|season|series|pt\.?|part|vol\.?|volume|ch\.?|chapter|day|week|round|game|match)\s*)?\d{1,4}[a-z]?\.?$|^s\d{1,3}\s*e\d{1,4}$/i;
+
+/** … and generic roles that repeat across many listings ("Cast", "Guests"). */
+const GENERIC = new Set([
+	"cast",
+	"main cast",
+	"voice cast",
+	"supporting cast",
+	"cameo",
+	"cameos",
+	"guest",
+	"guests",
+	"musical guest",
+	"musical guests",
+	"guest characters",
+	"characters",
+	"host",
+	"hosts",
+	"co-host",
+	"co-hosts",
+	"judge",
+	"judges",
+	"panel",
+	"panelists",
+	"contestant",
+	"contestants",
+	"players",
+	"team",
+	"members",
+	"former members",
+	"former",
+	"main",
+	"crew",
+	"director",
+	"directors",
+	"writer",
+	"writers",
+	"producer",
+	"producers",
+	"starring",
+	"featuring",
+	"feat",
+	"feat.",
+	"with",
+	"music",
+	"remix",
+	"remixes",
+	"franchise",
+]);
+
+/** True for titles that need the listing around them to make sense. */
+export function needsContext(title: string): boolean {
+	const t = title.trim();
+	return CODE.test(t) || GENERIC.has(t.toLowerCase());
+}
 
 function shorten(text: string, max: number): string {
 	return text.length > max ? `${text.slice(0, Math.max(1, max - 1)).trimEnd()}…` : text;
@@ -162,7 +220,9 @@ function shorten(text: string, max: number): string {
 /**
  * The label to show for a link, given its listing path.
  * - `own`: the link's own line (`asdfmovie4`), or the listing if the line has
- *   none. Bare numbers (`3`) get their listing in front (`Lateral › 3`).
+ *   none. Titles that mean little alone — numbers, season or episode codes and
+ *   generic roles like `Cast` — get the listing they're in put in front:
+ *   `Taskmaster UK › S3`, `Garfield (Movie) › Cast`.
  * - `listing`: the outermost listing (`asdf`).
  * - `path`: outermost and own, joined (`asdf › asdfmovie4`).
  * When a joined label is too long, the outer part is shortened first so the
@@ -173,10 +233,26 @@ export function labelFor(path: readonly string[], mode: LabelMode, maxLength = 4
 	const own = path[path.length - 1];
 	const outer = path[0];
 	if (mode === "listing") return shorten(outer, maxLength);
-	const joined = (mode === "path" || BARE_NUMBER.test(own)) && path.length > 1;
-	if (!joined) return shorten(own, maxLength);
+
+	let parts: string[];
+	if (mode === "path") {
+		parts = path.length > 1 ? [outer, own] : [own];
+	} else {
+		// Walk up until a title that makes sense on its own: S3 → Taskmaster UK › S3.
+		let i = path.length - 1;
+		while (i > 0 && needsContext(path[i])) i--;
+		parts = path.slice(i);
+	}
+	return join(parts, maxLength);
+}
+
+/** Joins titles with " › ", shortening the outer ones first if it's too long. */
+function join(parts: readonly string[], maxLength: number): string {
 	const sep = " › ";
-	if (outer.length + sep.length + own.length <= maxLength) return outer + sep + own;
+	const full = parts.join(sep);
+	if (full.length <= maxLength || parts.length === 1) return shorten(full, maxLength);
+	const own = parts[parts.length - 1];
+	const outer = parts.slice(0, -1).join(sep);
 	const room = maxLength - sep.length - Math.min(own.length, Math.ceil(maxLength * 0.6));
 	return shorten(outer, Math.max(4, room)) + sep + shorten(own, maxLength - sep.length - Math.max(4, room) + 1);
 }

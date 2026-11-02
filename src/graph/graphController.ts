@@ -8,6 +8,8 @@ import type { Slice } from "../tags/slices";
 import {
 	backgroundColourOf,
 	engineOf,
+	highlightOf,
+	labelFade,
 	type CoreGraphNode,
 	type CoreGraphRenderer,
 	type CoreGraphView,
@@ -16,7 +18,7 @@ import {
 } from "./internals";
 import { DetailLayer } from "./detailLayer";
 import { LinkLabelLayer } from "./linkLabelLayer";
-import { circleShape, drawPie, graphicsConstructorOf, PIE_NAME } from "./pie";
+import { circleShape, drawnCircles, drawPie, drawRing, graphicsConstructorOf, PIE_NAME } from "./pie";
 import { GraphToolbar, type Feature } from "./toolbar";
 
 export interface ControllerHost {
@@ -64,7 +66,8 @@ export class GraphController {
 	private pieVersion = 1;
 	private outline: number | null = null;
 	private graphicsUnsupported = false;
-	private loggedShape = false;
+	/** Current zoom fade for slices (0 hidden … 1 shown). */
+	private pieFade = 1;
 
 	// Radial layout
 	private job: LayoutHandle | null = null;
@@ -215,7 +218,7 @@ export class GraphController {
 		if (this.destroyed) return;
 		this.syncPies();
 		this.trackDrag();
-		let more = false;
+		let more = this.fadePies();
 		try {
 			more = this.labels?.update() ?? false;
 		} catch (e) {
@@ -297,7 +300,7 @@ export class GraphController {
 
 		const s = this.host.settings;
 		const focused = node.type === "focused";
-		const sig = `${slices.map((x) => `${x.rgb}:${x.weight}`).join(",")}|${focused}|${s.pieWeighted}|${s.pieOutline ? this.outline : "-"}`;
+		const sig = `${slices.map((x) => `${x.rgb}:${x.weight}`).join(",")}|${focused}|${s.pieWeighted}|${s.pieOutline ? this.outline : "-"}|${s.pieStyle}`;
 		if (st && st.g && st.circle === circle && st.sig === sig && st.g.parent === circle && !st.g.destroyed) {
 			st.version = version;
 			return false;
@@ -314,21 +317,131 @@ export class GraphController {
 		g.name = PIE_NAME;
 		if ("eventMode" in g) g.eventMode = "none";
 		else g.interactive = false;
-		const shape = circleShape(circle);
-		if (!this.loggedShape) {
-			this.loggedShape = true;
-			console.debug("Mercury Visualiser: node circle drawn at", shape);
-		}
+		const shape = circleShape(circle, this.noteCentreIn(node, circle));
+		const style = { weighted: s.pieWeighted, outline: s.pieOutline ? this.outline : null };
+		if (s.pieStyle === "ring") drawRing(g, slices, shape.radius, style);
 		// The current note keeps a ring of its highlight colour around the pie.
-		drawPie(g, slices, focused ? shape.radius * 0.7 : shape.radius, {
-			weighted: s.pieWeighted,
-			outline: s.pieOutline ? this.outline : null,
-		});
+		else drawPie(g, slices, focused ? shape.radius * 0.7 : shape.radius, style);
 		g.position?.set(shape.x, shape.y);
+		g.alpha = this.pieFade;
 		circle.addChild(g);
 		this.pies.set(node, { version, circle, g, sig });
 		this.pieNodes.add(node);
 		return true;
+	}
+
+	/**
+	 * Where the note sits (its position in the graph's physics) in its dot's own
+	 * coordinates. The Graph view always draws the dot centred there.
+	 */
+	private noteCentreIn(node: CoreGraphNode, circle: PixiGraphics): { x: number; y: number } | null {
+		const hm = this.renderer.hanger?.worldTransform;
+		const cm = circle.worldTransform;
+		if (!hm || !cm || !Number.isFinite(node.x) || !Number.isFinite(node.y)) return null;
+		try {
+			const p = cm.applyInverse({ x: hm.a * node.x + hm.c * node.y + hm.tx, y: hm.b * node.x + hm.d * node.y + hm.ty });
+			return Number.isFinite(p.x) && Number.isFinite(p.y) ? p : null;
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Fades slices in and out with zoom, together with note names. The hovered
+	 * note and its neighbours always show theirs. Returns true if anything changed.
+	 */
+	private fadePies(): boolean {
+		if (this.pieNodes.size === 0) return false;
+		const base = this.host.settings.pieFade ? labelFade(this.renderer) : 1;
+		this.pieFade = base;
+		const hl = highlightOf(this.renderer);
+		const near = new Set<string>();
+		if (hl) {
+			near.add(hl.id);
+			for (const id of Object.keys(hl.forward ?? {})) near.add(id);
+			for (const id of Object.keys(hl.reverse ?? {})) near.add(id);
+		}
+		let changed = false;
+		for (const node of this.pieNodes) {
+			const g = this.pies.get(node)?.g;
+			if (!g) continue;
+			const a = near.has(node.id) ? 1 : base;
+			if (Math.abs((g.alpha ?? 1) - a) > 0.01) {
+				g.alpha = a;
+				changed = true;
+			}
+		}
+		return changed;
+	}
+
+	/** A plain-text report of how this Graph view draws its dots, for troubleshooting. */
+	diagnostics(): string {
+		const r = this.renderer as unknown as Record<string, unknown> & CoreGraphRenderer;
+		const n3 = (v: unknown) => (typeof v === "number" ? Math.round(v * 1000) / 1000 : v);
+		const pt = (p: unknown) => {
+			const q = p as { x?: number; y?: number } | null | undefined;
+			return q ? `${n3(q.x)},${n3(q.y)}` : "-";
+		};
+		const m = (t: unknown) => {
+			const w = t as { a: number; b: number; c: number; d: number; tx: number; ty: number } | undefined;
+			return w ? `a=${n3(w.a)} b=${n3(w.b)} c=${n3(w.c)} d=${n3(w.d)} tx=${n3(w.tx)} ty=${n3(w.ty)}` : "-";
+		};
+		const out: string[] = [];
+		const hanger = r.hanger as unknown as (Record<string, unknown> & { children?: unknown[] }) | undefined;
+		out.push(`view=${this.kind} nodes=${r.nodes.length} links=${r.links.length} pies=${this.pieNodes.size}`);
+		out.push(
+			`renderer: scale=${n3(r.scale)} nodeScale=${n3(r.nodeScale)} fNodeSizeMult=${n3(r.fNodeSizeMult)} textAlpha=${n3(r.textAlpha)} panX=${n3(r.panX)} panY=${n3(r.panY)}`,
+		);
+		out.push(`hanger: children=${hanger?.children?.length ?? "-"} world: ${m(hanger?.worldTransform)}`);
+
+		const files = r.nodes.filter((n) => (n.type === "" || n.type === "focused") && n.circle);
+		const byWeight = [...files].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
+		const samples = [byWeight[0], [...this.pieNodes][0], byWeight[byWeight.length - 1]].filter(
+			(n, i, all): n is CoreGraphNode => !!n && all.indexOf(n) === i,
+		);
+		for (const node of samples) {
+			const c = node.circle as unknown as Record<string, unknown> & PixiGraphics;
+			const pie = this.pies.get(node)?.g ?? null;
+			out.push("");
+			out.push(`node "${node.id.replace(/^.*\//, "").replace(/\.md$/, "")}" type=${node.type || "file"} weight=${node.weight} size=${n3(node.getSize?.())} at ${n3(node.x)},${n3(node.y)}`);
+			out.push(
+				`  dot: class=${c.constructor?.name ?? "?"} parent=${c.parent === (r.hanger as unknown) ? "hanger" : "other"} pos=${pt(c.position ?? c)} scale=${pt(c.scale)} pivot=${pt(c.pivot)} rot=${n3(c.rotation)} alpha=${n3(c.alpha)} visible=${c.visible}`,
+			);
+			out.push(`  dot world: ${m(c.worldTransform)}`);
+			const kids = (c.children ?? []).map((k) => {
+				const kk = k as unknown as Record<string, unknown> & { constructor?: { name?: string } };
+				return `${kk.constructor?.name ?? "?"}${kk === (pie as unknown) ? "(our pie)" : ""}${kk.name ? `[${String(kk.name)}]` : ""}${kk.visible === false ? "(hidden)" : ""}`;
+			});
+			out.push(`  dot children: ${kids.length ? kids.join(", ") : "none"}`);
+			(c.geometry?.graphicsData ?? []).slice(0, 4).forEach((d, i) => {
+				const sh = d.shape ?? {};
+				out.push(
+					`  shape ${i}: type=${sh.type} x=${n3(sh.x)} y=${n3(sh.y)} r=${n3(sh.radius)} w=${n3(sh.width)} h=${n3(sh.height)} fill=${d.fillStyle?.visible}/${n3(d.fillStyle?.alpha)} line=${d.lineStyle?.visible}/${n3(d.lineStyle?.width)}`,
+				);
+			});
+			try {
+				const b = c.geometry?.bounds;
+				out.push(`  geometry bounds: ${b ? `${n3(b.minX)},${n3(b.minY)} → ${n3(b.maxX)},${n3(b.maxY)}` : "-"}`);
+			} catch {
+				out.push("  geometry bounds: error");
+			}
+			const wasVisible = pie?.visible;
+			if (pie) pie.visible = false;
+			try {
+				const lb = c.getLocalBounds?.();
+				out.push(`  local bounds (no pie): ${lb ? `${n3(lb.x)},${n3(lb.y)} ${n3(lb.width)}×${n3(lb.height)}` : "-"}`);
+			} catch {
+				out.push("  local bounds: error");
+			}
+			if (pie) pie.visible = wasVisible ?? true;
+			const centre = this.noteCentreIn(node, c);
+			out.push(`  note centre in dot: ${pt(centre)}  drawn circles: ${drawnCircles(c).map((x) => `${n3(x.x)},${n3(x.y)} r${n3(x.radius)}`).join(" | ") || "none"}`);
+			const shape = circleShape(c, centre);
+			out.push(`  pie placed at: ${n3(shape.x)},${n3(shape.y)} r=${n3(shape.radius)}${pie ? ` (now ${pt(pie.position ?? pie)})` : ""}`);
+			const t = node.text as unknown as (Record<string, unknown> & { parent?: unknown }) | null | undefined;
+			if (t) out.push(`  label: parent=${t.parent === c ? "dot" : t.parent === (r.hanger as unknown) ? "hanger" : "other"} pos=${pt(t.position ?? t)} scale=${pt(t.scale)} alpha=${n3(t.alpha)}`);
+		}
+		return out.join("\n");
 	}
 
 	private destroyPie(g: PixiGraphics): void {

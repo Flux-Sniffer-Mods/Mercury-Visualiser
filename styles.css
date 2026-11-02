@@ -178,3 +178,16 @@
 	width: 16px;
 	height: 16px;
 }
+
+/* Graph diagnostics */
+.mercury-diagnostics {
+	max-height: 50vh;
+	overflow: auto;
+	padding: var(--size-4-2, 8px);
+	border-radius: var(--radius-s, 4px);
+	background: var(--background-secondary);
+	font-size: var(--font-smaller, 12px);
+	white-space: pre-wrap;
+	word-break: break-word;
+	user-select: text;
+}
