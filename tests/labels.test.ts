@@ -85,6 +85,58 @@ describe("finding listings", () => {
 	});
 });
 
+describe("less tidy layouts", () => {
+	const messy = `Physical (Remix) [[Troye Sivan]],
+
+Do they know anything about the games? [[Someone]], [[Someone Else]]
+
+WWE Matches
+- [[Wrestler A]], [[Wrestler B]] vs [[Wrestler C]],
+
+[[The Band]],
+
+Just a sentence that ends.
+- [[Listed Person]]
+`;
+	const t = Object.fromEntries(parseListings(messy).map((l) => [l.target, l.path]));
+
+	it("takes a title written straight before the links", () => {
+		expect(t["Troye Sivan"]).toEqual(["Physical (Remix)"]);
+		expect(t["Someone"]).toEqual(["Do they know anything about the games?"]);
+	});
+
+	it("takes a plain line above a list as its title", () => {
+		expect(t["Wrestler A"]).toEqual(["WWE Matches"]);
+		expect(t["Wrestler C"]).toEqual(["WWE Matches"]);
+	});
+
+	it("names nested items after an item without a colon", () => {
+		const r = Object.fromEntries(
+			parseListings("Music:\n- Charli\n\t- Gone: [[Singer A]],\n\t- 1999: [[Singer B]],").map((l) => [l.target, l.path]),
+		);
+		expect(r["Singer A"]).toEqual(["Music", "Charli", "Gone"]);
+		expect(labelFor(r["Singer B"], "own")).toBe("Charli › 1999");
+	});
+
+	it("keeps a listing going across a blank line", () => {
+		const r = Object.fromEntries(
+			parseListings("A Film:\n- Cast: [[Actor A]],\n\n[[Actor B]], [[Actor C]]").map((l) => [l.target, l.path]),
+		);
+		expect(r["Actor B"]).toEqual(["A Film"]);
+	});
+
+	it("leaves bare links and sentences alone", () => {
+		// A plain title without a colon ends at the blank line after its list.
+		expect(t["The Band"]).toEqual([]);
+		expect(t["Listed Person"]).toEqual([]);
+	});
+
+	it("doesn't take joining words as titles", () => {
+		const r = parseListings("[[A]] vs [[B]]\n[[C]] and [[D]]");
+		expect(r.every((l) => l.path.length === 0)).toBe(true);
+	});
+});
+
 describe("label text", () => {
 	const path = ["Series", "The Pilot"];
 
@@ -129,6 +181,7 @@ describe("label text", () => {
 		expect(cleanTitle("**[[Wonder Example|WE]] (Movie)**")).toBe("WE (Movie)");
 		expect(cleanTitle("  _Cast_ ,")).toBe("Cast");
 		expect(lineTitle("Title:").title).toBe("Title");
-		expect(lineTitle("No title here [[X]]").title).toBeNull();
+		expect(lineTitle("[[X]] and [[Y]]").title).toBeNull();
+		expect(lineTitle("Physical (Remix) [[X]]").title).toBe("Physical (Remix)");
 	});
 });
