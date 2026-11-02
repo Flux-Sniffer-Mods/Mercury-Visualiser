@@ -92,6 +92,7 @@ export interface PixiContainer extends PixiDisplay {
 
 export interface PixiText extends PixiDisplay {
 	text: string;
+	tint?: number;
 	style: { clone?(): PixiTextStyle } & PixiTextStyle;
 	anchor?: { set(x: number, y: number): void };
 }

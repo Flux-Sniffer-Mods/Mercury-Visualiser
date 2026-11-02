@@ -58,6 +58,13 @@ interface Point {
 const finite = (...v: number[]) => v.every((n) => Number.isFinite(n));
 
 /**
+ * Below this opacity a shape counts as invisible. The Graph view draws a big,
+ * almost transparent circle round every dot as a touch target (five times the
+ * dot's size); it must not be mistaken for the dot.
+ */
+const VISIBLE_ALPHA = 0.05;
+
+/**
  * The circle-like shapes a Graphics object has visibly drawn, as centre +
  * radius. Filled shapes come first, then outlines (such as a highlight ring).
  */
@@ -69,8 +76,9 @@ export function drawnCircles(circle: PixiGraphics): CircleShape[] {
 		if (!shape) continue;
 		const fill = d.fillStyle;
 		const line = d.lineStyle;
-		const isFilled = fill ? fill.visible !== false && (fill.alpha ?? 1) > 0 : true;
-		const isOutlined = !!line && line.visible === true && (line.width ?? 0) > 0 && (line.alpha ?? 1) > 0;
+		const isFilled = fill ? fill.visible !== false && (fill.alpha ?? 1) >= VISIBLE_ALPHA : true;
+		const isOutlined =
+			!!line && line.visible === true && (line.width ?? 0) > 0 && (line.alpha ?? 1) >= VISIBLE_ALPHA;
 		if (!isFilled && !isOutlined) continue;
 		const out = isFilled ? filled : outlined;
 		const { x = 0, y = 0, width, height, radius } = shape;
@@ -113,19 +121,19 @@ export function circleShape(circle: PixiGraphics, centre?: Point | null): Circle
 
 	if (shapes.length > 0) {
 		if (!hint) return shapes[0];
-		// The visible shape whose centre is where the note is.
+		// The visible shape whose centre is nearest the note (the first one drawn wins a tie).
 		let best = shapes[0];
-		let bestD = Infinity;
+		let bestD = Math.hypot(best.x - hint.x, best.y - hint.y);
 		for (const c of shapes) {
-			const d = Math.hypot(c.x - hint.x, c.y - hint.y) / c.radius;
-			if (d < bestD) {
+			const d = Math.hypot(c.x - hint.x, c.y - hint.y);
+			if (d < bestD - 1e-6) {
 				bestD = d;
 				best = c;
 			}
 		}
-		if (bestD < 0.35) return best;
+		if (bestD < best.radius * 0.35) return best;
 		// Wildly far away: the position can't be trusted, so go by the drawing.
-		if (bestD > 4) return best;
+		if (bestD > best.radius * 4) return shapes[0];
 		// No drawn shape is centred on the note: trust the note's position, keep the drawn size.
 		return { x: hint.x, y: hint.y, radius: best.radius };
 	}

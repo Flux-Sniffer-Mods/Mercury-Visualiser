@@ -76,6 +76,39 @@ export function oklchToRgbInt(L: number, C: number, hueDeg: number): number | nu
 	return (r << 16) | (g << 8) | bl;
 }
 
+/** OKLab back to an sRGB integer, clamped into the screen's range. */
+export function oklabToRgbInt([L, a, b]: Oklab): number {
+	const l = Math.pow(L + 0.3963377774 * a + 0.2158037573 * b, 3);
+	const m = Math.pow(L - 0.1055613458 * a - 0.0638541728 * b, 3);
+	const s = Math.pow(L - 0.0894841775 * a - 1.291485548 * b, 3);
+	const lin = [
+		4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+		-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+		-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+	];
+	const [r, g, bl] = lin.map((v) => Math.round(Math.max(0, Math.min(1, linearToSrgb(Math.max(0, Math.min(1, v))))) * 255));
+	return (r << 16) | (g << 8) | bl;
+}
+
+/**
+ * A weighted blend of colours, mixed in OKLab so the result keeps its
+ * brightness and doesn't turn muddy the way an RGB average does.
+ */
+export function mixColours(entries: ReadonlyArray<{ rgb: number; weight: number }>): number | null {
+	let total = 0;
+	const acc: Oklab = [0, 0, 0];
+	for (const { rgb, weight } of entries) {
+		if (!(weight > 0)) continue;
+		const lab = rgbIntToOklab(rgb);
+		acc[0] += lab[0] * weight;
+		acc[1] += lab[1] * weight;
+		acc[2] += lab[2] * weight;
+		total += weight;
+	}
+	if (total === 0) return null;
+	return oklabToRgbInt([acc[0] / total, acc[1] / total, acc[2] / total]);
+}
+
 export function oklabDistance(p: Oklab, q: Oklab): number {
 	const dl = p[0] - q[0];
 	const da = p[1] - q[1];

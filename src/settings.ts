@@ -56,6 +56,10 @@ export interface MercurySettings {
 
 	// 4. Link labels
 	linkLabels: boolean;
+	/** Tint labels at all. */
+	linkLabelColours: boolean;
+	/** "ends": blend the two notes the line joins; "listing": everyone in the listing, weighted to its main tags. */
+	linkLabelColourBy: "ends" | "listing";
 	linkLabelMode: LabelMode;
 	linkLabelMax: number;
 
@@ -67,6 +71,10 @@ export interface MercurySettings {
 	lodDensityStyle: DensityStyle;
 	/** 0 = crisp, 3 = very soft. */
 	lodMapSoftness: number;
+	/** Drop the least important dots and lines as you zoom out. */
+	lodThinOut: boolean;
+	/** Most of the dots (0–1) dropped, just before the density map takes over. */
+	lodThinAmount: number;
 
 	// General
 	showGraphToolbar: boolean;
@@ -104,6 +112,8 @@ export const DEFAULT_SETTINGS: MercurySettings = {
 	pieFade: true,
 
 	linkLabels: true,
+	linkLabelColours: true,
+	linkLabelColourBy: "ends",
 	linkLabelMode: "own",
 	linkLabelMax: 120,
 
@@ -113,6 +123,8 @@ export const DEFAULT_SETTINGS: MercurySettings = {
 	lodMapBelowPx: 1.6,
 	lodDensityStyle: "tags",
 	lodMapSoftness: 1,
+	lodThinOut: true,
+	lodThinAmount: 0.7,
 
 	showGraphToolbar: true,
 };

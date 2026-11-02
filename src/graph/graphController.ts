@@ -32,6 +32,8 @@ export interface ControllerHost {
 	linkLabel(sourceId: string, targetId: string): string | null;
 	/** Changes whenever link labels may have changed. */
 	labelsVersion(): number;
+	/** The colour of the listing a line comes from, weighted to its main tags. */
+	listingColour(sourceId: string, targetId: string): number | null;
 	/** Link distance from the Graph view's own "Forces" settings. */
 	graphLinkDistance(view: CoreGraphView): number | null;
 	toggleFeature(feature: Feature): void;
@@ -132,6 +134,9 @@ export class GraphController {
 			maxLabels: () => s().linkLabelMax,
 			label: (a, b) => host.linkLabel(a, b),
 			version: () => host.labelsVersion(),
+			labelColourMode: () => (!s().linkLabelColours ? "off" : s().linkLabelColourBy),
+			colourOf: (node) => this.mapColour(node),
+			listingColour: (a, b) => host.listingColour(a, b),
 		});
 		this.detail = new DetailLayer(this.renderer, {
 			culling: () => s().levelOfDetail && s().lodCulling,
@@ -139,6 +144,8 @@ export class GraphController {
 			mapBelowPx: () => s().lodMapBelowPx,
 			densityStyle: () => s().lodDensityStyle,
 			softness: () => s().lodMapSoftness,
+			thinning: () => s().levelOfDetail && s().lodThinOut,
+			thinAmount: () => s().lodThinAmount,
 			nodeColour: (node) => this.mapColour(node),
 			accent: () => this.accent,
 			colourVersion: () => this.pieVersion,
@@ -335,9 +342,30 @@ export class GraphController {
 	 * coordinates. The Graph view always draws the dot centred there.
 	 */
 	private noteCentreIn(node: CoreGraphNode, circle: PixiGraphics): { x: number; y: number } | null {
+		if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return null;
+		// Usually the dot sits straight in the graph's layer: work it out from the dot's own
+		// position, scale and pivot. (Its on-screen transform goes stale while it's off screen.)
+		const c = circle as unknown as {
+			parent?: unknown;
+			x?: number;
+			y?: number;
+			rotation?: number;
+			scale?: { x: number; y: number };
+			pivot?: { x: number; y: number };
+		};
+		if (c.parent === (this.renderer.hanger as unknown) && c.scale && Math.abs(c.rotation ?? 0) < 1e-9) {
+			const sx = c.scale.x;
+			const sy = c.scale.y;
+			if (sx !== 0 && sy !== 0 && Number.isFinite(c.x) && Number.isFinite(c.y)) {
+				return {
+					x: (node.x - (c.x ?? 0)) / sx + (c.pivot?.x ?? 0),
+					y: (node.y - (c.y ?? 0)) / sy + (c.pivot?.y ?? 0),
+				};
+			}
+		}
 		const hm = this.renderer.hanger?.worldTransform;
 		const cm = circle.worldTransform;
-		if (!hm || !cm || !Number.isFinite(node.x) || !Number.isFinite(node.y)) return null;
+		if (!hm || !cm || circle.visible === false) return null;
 		try {
 			const p = cm.applyInverse({ x: hm.a * node.x + hm.c * node.y + hm.tx, y: hm.b * node.x + hm.d * node.y + hm.ty });
 			return Number.isFinite(p.x) && Number.isFinite(p.y) ? p : null;
@@ -394,9 +422,13 @@ export class GraphController {
 		);
 		out.push(`hanger: children=${hanger?.children?.length ?? "-"} world: ${m(hanger?.worldTransform)}`);
 
-		const files = r.nodes.filter((n) => (n.type === "" || n.type === "focused") && n.circle);
+		// Prefer notes on screen: Obsidian hides the rest, and their numbers go stale.
+		const all = r.nodes.filter((n) => (n.type === "" || n.type === "focused") && n.circle);
+		const onScreen = all.filter((n) => n.circle?.visible !== false);
+		const files = onScreen.length >= 3 ? onScreen : all;
 		const byWeight = [...files].sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
-		const samples = [byWeight[0], [...this.pieNodes][0], byWeight[byWeight.length - 1]].filter(
+		const pieOnScreen = [...this.pieNodes].find((n) => n.circle?.visible !== false) ?? [...this.pieNodes][0];
+		const samples = [byWeight[0], pieOnScreen, byWeight[byWeight.length - 1]].filter(
 			(n, i, all): n is CoreGraphNode => !!n && all.indexOf(n) === i,
 		);
 		for (const node of samples) {
