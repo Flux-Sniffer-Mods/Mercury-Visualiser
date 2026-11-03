@@ -59,6 +59,48 @@ function separation(pos: Float64Array, groups: number[][]) {
 }
 
 describe("dynamic spacing", () => {
+	it("stays a sensible size when lots of links run between clusters", () => {
+		// Clusters of very different sizes, links between them and single-link notes, like a
+		// real vault. Links between clusters stretch them, which once made stretched clusters
+		// push harder and harder until the layout was over ten times its normal size.
+		const links: number[] = [];
+		let seed = 7;
+		const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+		const sizes = Array.from({ length: 12 }, (_, k) => Math.max(5, Math.round(120 * Math.pow(0.8, k))));
+		let n = 0;
+		for (const size of sizes) {
+			for (let i = 0; i < size; i++) for (let j = i + 1; j < size; j++) if (rand() < Math.min(0.5, 6 / size)) links.push(n + i, n + j);
+			n += size;
+		}
+		const core = n;
+		for (let k = 0; k < 300; k++) links.push(Math.floor(rand() * core), Math.floor(rand() * core));
+		for (let k = 0; k < 400; k++) links.push(Math.floor(rand() * core), n++);
+		const positions = new Float64Array(n * 2);
+		for (let i = 0; i < n; i++) {
+			positions[2 * i] = Math.cos(i) * Math.sqrt(i) * 40;
+			positions[2 * i + 1] = Math.sin(i) * Math.sqrt(i) * 40;
+		}
+		const extent = (clusters: boolean) => {
+			const layout = createLayout({
+				n,
+				positions: Float64Array.from(positions),
+				sizes: new Float32Array(n).fill(4),
+				links: Uint32Array.from(links),
+				params: { style: "spokes", spokeLength: 60, splay: 0.6, repel: 3, clusters, root: -1, alpha: 1 },
+			});
+			while (!layout.step(50));
+			let lo = Infinity;
+			let hi = -Infinity;
+			for (const v of layout.positions()) {
+				expect(Number.isFinite(v)).toBe(true);
+				lo = Math.min(lo, v);
+				hi = Math.max(hi, v);
+			}
+			return hi - lo;
+		};
+		expect(extent(true)).toBeLessThan(extent(false) * 3);
+	}, 20000);
+
 	it("finds each tight group as one cluster, leaves included", () => {
 		const g = islands();
 		const cluster = findClusters(buildAdjacency(g.n, g.links));
