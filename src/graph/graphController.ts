@@ -132,6 +132,7 @@ export class GraphController {
 		this.labels = new LinkLabelLayer(this.renderer, {
 			enabled: () => s().linkLabels,
 			maxLabels: () => s().linkLabelMax,
+			placement: () => s().linkLabelPlacement,
 			label: (a, b) => host.linkLabel(a, b),
 			version: () => host.labelsVersion(),
 			labelColourMode: () => (!s().linkLabelColours ? "off" : s().linkLabelColourBy),

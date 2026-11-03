@@ -61,6 +61,8 @@ export interface MercurySettings {
 	/** "ends": blend the two notes the line joins; "listing": everyone in the listing, weighted to its main tags. */
 	linkLabelColourBy: "ends" | "listing";
 	linkLabelMode: LabelMode;
+	/** "names": next to the note names at each end of a long line; "middle": once along the line. */
+	linkLabelPlacement: "names" | "middle";
 	linkLabelMax: number;
 
 	// 5. Level of detail
@@ -115,6 +117,7 @@ export const DEFAULT_SETTINGS: MercurySettings = {
 	linkLabelColours: true,
 	linkLabelColourBy: "ends",
 	linkLabelMode: "own",
+	linkLabelPlacement: "names",
 	linkLabelMax: 120,
 
 	levelOfDetail: true,

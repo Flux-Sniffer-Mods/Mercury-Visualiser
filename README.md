@@ -178,6 +178,12 @@ asdf:
 
 labels the lines "asdfmovie2" and "asdfmovie4". The label is whatever comes before the colon (or before a dash). Headings above a list count too.
 
+Titles without a colon work as well:
+
+- **Text before the link**, like `Muffin Time [[Someone]]`, labels the line "Muffin Time" (short titles only; joining words such as "and", "with" or "feat" at the end are left out).
+- **A short line on its own just above a list**, like `Sky Scam` followed by `- [[Someone]]`, labels every link in that list. A blank line ends it.
+- **Nested lists**, like `- Album name` with the songs indented below it, use the outer item as the title for the links inside it.
+
 Some titles mean little on their own, like season and episode numbers (`S3`, `E2`, `Season 1`) or roles that appear in lots of notes (`Cast`, `Guests`, `Host`). These get the name of the listing they sit under, so a line from
 
 ```
@@ -194,6 +200,7 @@ To keep the graph tidy:
 - **Labels never sit on top of each other** or on top of note names.
 - **When several lines from one note share a label**, it is shown once.
 - **Only lines on screen** get labels, starting from the middle.
+- **Labels sit next to the names.** On a long line, the label sits just past the dot at each end, so you can read it beside the note's name, and it follows the note as you pan and zoom. If only one end is on screen, only that end is labelled; if neither is, or both ends are too crowded, the label goes in the middle of the part you can see. Short lines get one label partway along. You can switch to "Middle of the line" instead.
 - **Labels are coloured.** Either with a blend of the tag colours of the two notes the line joins, or with the colours of everyone in the listing, weighted towards the tags most of them share. For example, a Taskmaster series where nearly everyone is a comedian gets the comedian colour. Labels with no tag colours to go on stay plain.
 
 ### Settings
@@ -201,6 +208,7 @@ To keep the graph tidy:
 | Setting | What it does |
 | --- | --- |
 | Label with | "Its own line" (for example `asdfmovie4`, or `Taskmaster UK › S3` as above), "The listing" (`asdf`), or "Both" (`asdf › asdfmovie4`). |
+| Label position | "Next to the names" (at each end of long lines, as above) or "Middle of the line" (one label partway along every line). |
 | Colour labels by | "The two notes it joins", "Everyone in the listing" (weighted towards the main tags), or "Don't colour". |
 | Most labels at once | The most labels shown together. Fewer is tidier and faster. |
 

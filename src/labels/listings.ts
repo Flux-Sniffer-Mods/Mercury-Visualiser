@@ -20,6 +20,8 @@ export interface ListedLink {
 	target: string;
 	/** Titles from the outermost listing down to the link's own line. */
 	path: string[];
+	/** Line number (0-based) the link is on. */
+	line: number;
 }
 
 const LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
@@ -61,8 +63,21 @@ export function lineTitle(content: string): { title: string | null; linksFrom: n
 	if (before.trim() === "") {
 		const m = content.match(/^\s*(!?\[\[[^\]]+\]\])\s*:/);
 		if (m) return { title: cleanTitle(m[1]), linksFrom: m[0].length };
+		return { title: null, linksFrom: 0 };
+	}
+	// A title written straight before the links: `Physical (Remix) [[Troye Sivan]]`.
+	const plain = before.trim();
+	if (plain.length <= 90 && /[A-Za-z0-9]/.test(plain) && !/(^|\s)(vs\.?|and|&|with|feat\.?|ft\.?|x)$/i.test(plain)) {
+		return { title: cleanTitle(plain), linksFrom: 0 };
 	}
 	return { title: null, linksFrom: 0 };
+}
+
+/** A short line of text with no links, which can name the list below it ("WWE Matches"). */
+function bareTitle(line: string): string | null {
+	const t = line.trim();
+	if (!t || t.length > 90 || t.includes("[[") || /[.!?]$/.test(t)) return null;
+	return cleanTitle(t);
 }
 
 function linksIn(content: string, from: number): string[] {
@@ -94,6 +109,8 @@ export function parseListings(text: string): ListedLink[] {
 	const out: ListedLink[] = [];
 	let header: string | null = null;
 	let headerHasLinks = false;
+	/** The header was a plain line without a colon ("WWE Matches"): a blank line ends it. */
+	let headerEnds = false;
 	let stack: Array<{ indent: number; title: string | null }> = [];
 	let fence: string | null = null;
 
@@ -111,8 +128,8 @@ export function parseListings(text: string): ListedLink[] {
 
 		if (line.trim() === "") {
 			stack = [];
-			// A bare "Title:" line can be followed by a blank line before its list.
-			if (headerHasLinks) header = null;
+			// A bare "Title:" line can be followed by a blank line before (or within) its list.
+			if (headerHasLinks || headerEnds) header = null;
 			continue;
 		}
 
@@ -120,6 +137,7 @@ export function parseListings(text: string): ListedLink[] {
 		if (heading) {
 			header = cleanTitle(heading[1].replace(/:\s*$/, ""));
 			headerHasLinks = false;
+			headerEnds = false;
 			stack = [];
 			continue;
 		}
@@ -128,9 +146,15 @@ export function parseListings(text: string): ListedLink[] {
 		if (item) {
 			const indent = indentOf(item[1]);
 			while (stack.length > 0 && stack[stack.length - 1].indent >= indent) stack.pop();
-			const { title, linksFrom } = lineTitle(item[2]);
+			let { title, linksFrom } = lineTitle(item[2]);
+			// An item with no links and more-indented items below names them: "- Charli" › "- 1999: [[…]]".
+			if (title === null && !item[2].includes("[[")) {
+				const next = (lines[i + 1] ?? "").match(LIST_ITEM);
+				if (next && indentOf(next[1]) > indent) title = bareTitle(item[2]);
+				linksFrom = 0;
+			}
 			const path = [header, ...stack.map((s) => s.title), title].filter((t): t is string => !!t);
-			for (const target of linksIn(item[2], linksFrom)) out.push({ target, path });
+			for (const target of linksIn(item[2], linksFrom)) out.push({ target, path, line: i });
 			stack.push({ indent, title });
 			continue;
 		}
@@ -142,11 +166,17 @@ export function parseListings(text: string): ListedLink[] {
 		if (title) {
 			header = title;
 			headerHasLinks = links.length > 0;
-			for (const target of links) out.push({ target, path: [title] });
+			headerEnds = false;
+			for (const target of links) out.push({ target, path: [title], line: i });
 		} else if (links.length > 0) {
-			for (const target of links) out.push({ target, path: header ? [header] : [] });
+			for (const target of links) out.push({ target, path: header ? [header] : [], line: i });
 		} else {
-			header = null;
+			// A plain line right above a list names it, even without a colon: "WWE Matches".
+			const next = lines[i + 1] ?? "";
+			const bare = LIST_ITEM.test(next) ? bareTitle(line) : null;
+			header = bare;
+			headerHasLinks = false;
+			headerEnds = bare !== null;
 		}
 	}
 	return out;

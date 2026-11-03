@@ -366,6 +366,21 @@ export class MercurySettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Label position")
+			.setDesc("Next to the names: on a long line the label sits just past the dot at each end, so you can read it beside the note's name, and it moves along as you pan and zoom. Short lines still get one label in the middle. Middle of the line: always one label partway along.")
+			.addDropdown((d) =>
+				d
+					.addOption("names", "Next to the names")
+					.addOption("middle", "Middle of the line")
+					.setValue(s.linkLabelPlacement)
+					.onChange(async (v) => {
+						s.linkLabelPlacement = v === "middle" ? "middle" : "names";
+						await plugin.saveSettings();
+						plugin.graphs.forEach((c) => c.requestRedraw());
+					}),
+			);
+
+		new Setting(containerEl)
 			.setName("Colour labels by")
 			.setDesc("The two notes: a blend of the tag colours of the notes the line joins. Everyone in the listing: a blend of the tag colours of everyone listed with it (say, the whole cast of asdfmovie4), weighted towards the tags most of them share.")
 			.addDropdown((d) =>
