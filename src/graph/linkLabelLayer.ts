@@ -138,6 +138,10 @@ interface Labelled {
 	other: CoreGraphNode;
 	/** Labelled next to the names (true) or along the middle; switches with some slack, never mid-zoom. */
 	nearNames?: boolean;
+	/** Keys for showing a fan of same-label lines once: from the busy end, from the other end, and this line. */
+	fanHub: string;
+	fanOther: string;
+	fanLine: string;
 }
 
 interface LabelState {
@@ -182,6 +186,10 @@ export class LinkLabelLayer {
 	private state = new Map<PixiText, LabelState>();
 	private lastScale = 0;
 	private zoomedAt = -Infinity;
+	/** Screen grid of cells taken by labels and note names (reused between frames). */
+	private grid = new Uint8Array(0);
+	/** A dot's radius in its own units, read from its shape once. */
+	private radii = new WeakMap<object, { geometry: unknown; parts: number; r: number }>();
 	/** Frames drawn since the zoom last changed. */
 	private framesSinceZoom = Infinity;
 	private lastFrameAt = 0;
@@ -234,10 +242,22 @@ export class LinkLabelLayer {
 			const st = text ? this.state.get(text) : undefined;
 			return st?.placed ? st : undefined;
 		};
-		const push = (c: Omit<Candidate, "tier" | "prevOffset">) => {
-			const st = prior(c.item, c.slot);
-			if (!st && !c.hot && settling) return;
-			candidates.push({ ...c, tier: c.hot ? 0 : st ? 1 : 2, prevOffset: st ? st.offset : -1 });
+		const add = (
+			item: Labelled,
+			slot: 0 | 1 | 2,
+			st: LabelState | undefined,
+			at: { x: number; y: number },
+			ux: number,
+			uy: number,
+			offsets: number[],
+			middle: boolean,
+			hot: boolean,
+			fan: string,
+			priority: number,
+			fallback = false,
+		) => {
+			if (!st && !hot && settling) return;
+			candidates.push({ item, slot, at, ux, uy, offsets, middle, fallback, hot, fan, priority, tier: hot ? 0 : st ? 1 : 2, prevOffset: st ? st.offset : -1 });
 		};
 
 		// Candidates, in screen space: the hovered note's lines first, then nearest the middle.
@@ -265,7 +285,10 @@ export class LinkLabelLayer {
 			const pt = toScreen(other.x, other.y);
 			const length = Math.hypot(pt.x - ps.x, pt.y - ps.y);
 			// A label already showing may stay on a slightly shorter line, so it doesn't blink at the limit.
-			const showing = !!(prior(item, 0) || prior(item, 1) || prior(item, 2));
+			const st0 = prior(item, 0);
+			const st1 = prior(item, 1);
+			const st2 = prior(item, 2);
+			const showing = !!(st0 || st1 || st2);
 			if (!(length >= (showing ? MIN_SCREEN_LENGTH * 0.75 : MIN_SCREEN_LENGTH))) continue;
 			const ux = (pt.x - ps.x) / length;
 			const uy = (pt.y - ps.y) / length;
@@ -281,61 +304,52 @@ export class LinkLabelLayer {
 				// One label out along the line, away from the busier end.
 				const p = { x: ps.x + (pt.x - ps.x) * ALONG, y: ps.y + (pt.y - ps.y) * ALONG };
 				if (!onScreen(p, 40)) continue;
-				push({ item, slot: 2, at: p, ux, uy, offsets: [0], middle: true, hot, fan: `${hub.id}\0${item.label}`, priority: (p.x - cx) ** 2 + (p.y - cy) ** 2 });
+				add(item, 2, st2, p, ux, uy, [0], true, hot, item.fanHub, (p.x - cx) ** 2 + (p.y - cy) ** 2);
 				continue;
 			}
 
 			// Next to the names: a label just past each dot that's on screen, reading away from it.
 			let any = false;
-			for (const [end, pe, sx, sy, slot] of [
-				[hub, ps, ux, uy, 0],
-				[other, pt, -ux, -uy, 1],
-			] as const) {
-				if (!onScreen(pe)) continue;
+			if (onScreen(ps)) {
 				any = true;
 				// Clear of the dot and any pie ring drawn around it.
-				const r = this.dotRadiusPx(end, view.scale) * 1.45;
-				push({
-					item,
-					slot,
-					at: pe,
-					ux: sx,
-					uy: sy,
-					offsets: [r + 8, r + 34, r + 70],
-					middle: false,
-					hot,
-					fan: `${end.id}\0${item.label}`,
-					priority: (pe.x - cx) ** 2 + (pe.y - cy) ** 2,
-				});
+				const rr = this.dotRadiusPx(hub, view.scale) * 1.45;
+				add(item, 0, st0, ps, ux, uy, [rr + 8, rr + 34, rr + 70], false, hot, item.fanHub, (ps.x - cx) ** 2 + (ps.y - cy) ** 2);
 			}
-			// The middle of the part in view: used when neither end is on screen, or both ends are too crowded.
+			if (onScreen(pt)) {
+				any = true;
+				const rr = this.dotRadiusPx(other, view.scale) * 1.45;
+				add(item, 1, st1, pt, -ux, -uy, [rr + 8, rr + 34, rr + 70], false, hot, item.fanOther, (pt.x - cx) ** 2 + (pt.y - cy) ** 2);
+			}
+			// The middle of the part in view: when neither end is on screen (or it's already showing there).
+			if (any && !st2) continue;
 			const seg = clipToRect(ps, pt, screenW, screenH);
 			if (!seg) continue;
 			const p = { x: (seg[0].x + seg[1].x) / 2, y: (seg[0].y + seg[1].y) / 2 };
-			push({
-				item,
-				slot: 2,
-				at: p,
-				ux,
-				uy,
-				offsets: [0, -40, 40],
-				middle: true,
-				fallback: any,
-				hot,
-				fan: `${hub.id}\0${other.id}`,
-				priority: (p.x - cx) ** 2 + (p.y - cy) ** 2 + screenW * screenH,
-			});
+			add(item, 2, st2, p, ux, uy, [0, -40, 40], true, hot, item.fanLine, (p.x - cx) ** 2 + (p.y - cy) ** 2 + screenW * screenH, any);
 		}
 		// The hovered note's lines first, then labels already showing (so they keep their places), then new ones.
 		candidates.sort((a, b) => a.tier - b.tier || a.priority - b.priority);
 
 		// Screen-space occupancy, so labels don't land on each other or on note names.
-		const taken = new Set<number>();
-		const key = (gx: number, gy: number) => gx * 65536 + gy;
+		// A flat grid over the screen plus a margin; cells beyond it count as free.
+		const MARGIN = 24;
+		const cols = Math.ceil(screenW / CELL) + 2 * MARGIN;
+		const rows = Math.ceil(screenH / CELL) + 2 * MARGIN;
+		if (this.grid.length < cols * rows) this.grid = new Uint8Array(cols * rows);
+		else this.grid.fill(0, 0, cols * rows);
+		const grid = this.grid;
+		const cellAt = (x: number, y: number) => {
+			const gx = Math.floor(x / CELL) + MARGIN;
+			const gy = Math.floor(y / CELL) + MARGIN;
+			return gx < 0 || gy < 0 || gx >= cols || gy >= rows ? -1 : gy * cols + gx;
+		};
 		const markRect = (x0: number, y0: number, x1: number, y1: number) => {
-			for (let gx = Math.floor(x0 / CELL); gx <= Math.floor(x1 / CELL); gx++) {
-				for (let gy = Math.floor(y0 / CELL); gy <= Math.floor(y1 / CELL); gy++) taken.add(key(gx, gy));
-			}
+			const gx0 = Math.max(0, Math.floor(x0 / CELL) + MARGIN);
+			const gx1 = Math.min(cols - 1, Math.floor(x1 / CELL) + MARGIN);
+			const gy0 = Math.max(0, Math.floor(y0 / CELL) + MARGIN);
+			const gy1 = Math.min(rows - 1, Math.floor(y1 / CELL) + MARGIN);
+			for (let gy = gy0; gy <= gy1; gy++) grid.fill(1, gy * cols + gx0, gy * cols + gx1 + 1);
 		};
 		// Every note name on screen counts, however faded: a name that's fading in mustn't suddenly push labels out.
 		for (const n of r.nodes) {
@@ -407,8 +421,9 @@ export class LinkLabelLayer {
 					for (const k of [-0.35, 0.35]) {
 						const sx = p.x + nx + dx * d + dy * h * k;
 						const sy = p.y + ny + dy * d - dx * h * k;
-						const c = key(Math.floor(sx / CELL), Math.floor(sy / CELL));
-						if (taken.has(c)) {
+						const c = cellAt(sx, sy);
+						if (c < 0) continue;
+						if (grid[c]) {
 							blocked = true;
 							break;
 						}
@@ -423,7 +438,7 @@ export class LinkLabelLayer {
 				}
 			}
 			if (!placedAt) continue;
-			for (const c of cells) taken.add(c);
+			for (const c of cells) grid[c] = 1;
 			fans.add(cand.fan);
 			placedItems.add(item);
 
@@ -573,8 +588,16 @@ export class LinkLabelLayer {
 	/** A note's dot radius on screen, in pixels. */
 	private dotRadiusPx(node: CoreGraphNode, scale: number): number {
 		const c = node.circle as unknown as (PixiGraphics & { scale?: { x: number } }) | null;
-		if (c?.scale) return circleShape(c).radius * Math.abs(c.scale.x) * scale;
-		return (node.getSize?.() ?? 8) * scale;
+		if (!c?.scale) return (node.getSize?.() ?? 8) * scale;
+		// Reading the shape is slow-ish and it only changes if the dot is redrawn: remember it.
+		const geometry = (c as unknown as { geometry?: { graphicsData?: unknown[] } }).geometry;
+		const parts = geometry?.graphicsData?.length ?? 0;
+		let known = this.radii.get(c);
+		if (!known || known.geometry !== geometry || known.parts !== parts) {
+			known = { geometry, parts, r: circleShape(c).radius };
+			this.radii.set(c, known);
+		}
+		return known.r * Math.abs(c.scale.x) * scale;
 	}
 
 	/** Uses the Graph view's own PIXI classes, taken from its node labels. */
@@ -621,7 +644,17 @@ export class LinkLabelLayer {
 			const label = this.host.label(s.id, t.id);
 			if (!label) continue;
 			const sBusier = (degree.get(s) ?? 0) >= (degree.get(t) ?? 0);
-			this.labelled.push({ link, label, hub: sBusier ? s : t, other: sBusier ? t : s });
+			const hub = sBusier ? s : t;
+			const other = sBusier ? t : s;
+			this.labelled.push({
+				link,
+				label,
+				hub,
+				other,
+				fanHub: `${hub.id}\0${label}`,
+				fanOther: `${other.id}\0${label}`,
+				fanLine: `${hub.id}\0${other.id}`,
+			});
 		}
 		this.builtFor = { links, length: links.length, version };
 	}
