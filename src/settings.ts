@@ -41,6 +41,8 @@ export interface MercurySettings {
 	spokeLength: number;
 	splayStrength: number;
 	repelMultiplier: number;
+	/** Find clusters and keep them apart, by a gap that grows with each cluster's size. */
+	dynamicSpacing: boolean;
 	animateLayout: boolean;
 
 	// 3. Pie-chart nodes
@@ -102,7 +104,8 @@ export const DEFAULT_SETTINGS: MercurySettings = {
 	matchGraphLinkDistance: true,
 	spokeLength: 250,
 	splayStrength: 0.6,
-	repelMultiplier: 1,
+	repelMultiplier: 3,
+	dynamicSpacing: true,
 	animateLayout: true,
 
 	pieNodes: true,
@@ -110,7 +113,7 @@ export const DEFAULT_SETTINGS: MercurySettings = {
 	pieWeighted: false,
 	pieOutline: true,
 	pieTagNodes: true,
-	pieStyle: "ring",
+	pieStyle: "filled",
 	pieFade: true,
 
 	linkLabels: true,

@@ -233,10 +233,10 @@ export class MercurySettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Spacing")
-			.setDesc("How strongly unrelated notes push each other apart.")
+			.setDesc("How strongly unrelated notes push each other apart. With dynamic spacing on, this also sets the gap between clusters.")
 			.addSlider((sl) =>
 				sl
-					.setLimits(0.2, 3, 0.1)
+					.setLimits(0.2, 6, 0.1)
 					.setValue(s.repelMultiplier)
 					.setDynamicTooltip()
 					.onChange(async (v) => {
@@ -244,6 +244,17 @@ export class MercurySettingTab extends PluginSettingTab {
 						await plugin.saveSettings();
 						rerun();
 					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Dynamic spacing")
+			.setDesc("Finds clusters (groups of notes linked mostly to each other) and keeps a clear gap between them, so each group reads as its own island. Bigger clusters get more room. Only used with the Spokes style.")
+			.addToggle((t) =>
+				t.setValue(s.dynamicSpacing).onChange(async (v) => {
+					s.dynamicSpacing = v;
+					await plugin.saveSettings();
+					rerun();
+				}),
 			);
 
 		new Setting(containerEl)
@@ -524,6 +535,14 @@ export class MercurySettingTab extends PluginSettingTab {
 					plugin.graphs.update();
 				}),
 			);
+
+		// ------------------------------------------------------------ defaults
+		new Setting(containerEl).setName("Defaults").setHeading();
+
+		new Setting(containerEl)
+			.setName("Restore default settings")
+			.setDesc("Puts every option on this page back to the recommended defaults. Tag colours are picked again from the default colours, except ones you chose or locked yourself.")
+			.addButton((b) => b.setButtonText("Restore defaults").setWarning().onClick(() => plugin.confirmRestoreDefaults()));
 
 		// ------------------------------------------------------ troubleshooting
 		new Setting(containerEl).setName("Troubleshooting").setHeading();

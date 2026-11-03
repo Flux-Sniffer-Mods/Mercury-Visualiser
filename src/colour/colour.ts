@@ -123,8 +123,8 @@ interface Candidate {
 }
 
 /**
- * Where automatic colours come from: the Mercury palette (default), the whole
- * spectrum within some ranges, or a list of the user's own colours.
+ * Where automatic colours come from: the whole spectrum within some ranges
+ * (default), the Mercury palette, or a list of the user's own colours.
  */
 export interface ColourPool {
 	mode: "mercury" | "spectrum" | "custom";
@@ -139,7 +139,7 @@ export interface ColourPool {
 }
 
 export const DEFAULT_POOL: ColourPool = {
-	mode: "mercury",
+	mode: "spectrum",
 	lightness: [0.58, 0.82],
 	vividness: [0.1, 0.26],
 	hues: [0, 360],

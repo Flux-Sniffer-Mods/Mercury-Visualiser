@@ -6,7 +6,7 @@ It adds five things, and you can switch each one on or off at any time:
 
 1. **Tag colours.** Every tag gets its own colour automatically. When you use a new tag, it gets the colour that looks most different from the ones you already have. The colours come from a picture of the planet Mercury.
 2. **Spread-out links.** A note's links fan out evenly all the way around it, like the slices of a pie, instead of all pointing one way.
-3. **Pie-chart dots.** A note with several tags shows all of their colours: as a thin coloured ring around its dot, or as a little pie chart.
+3. **Pie-chart dots.** A note with several tags shows all of their colours: as a little pie chart, or as a thin coloured ring around its dot.
 4. **Line labels.** Each line between two notes shows where the link was written, for example the name of the video both people were in, tinted with the colours of the two notes.
 5. **Smoother big graphs.** Parts of the graph you can't see aren't drawn, less important dots and lines drop away as you zoom out, and far out the dots blend into a soft coloured map.
 
@@ -104,15 +104,13 @@ Open **Colours to choose from > Edit...** in the settings. A preview shows the n
 
 You can pick colours from:
 
-- **Mercury** (the default). 59 colours taken from an enhanced-colour photo of the planet Mercury: violets, bright blues, teals, lime-yellows and hot reds. To adjust them, press "Copy to my own colours".
-- **The whole spectrum.** Any colour, within the brightness, vividness and range of hues you choose with the sliders.
+- **The whole spectrum** (the default). Any colour, within the brightness, vividness and range of hues you choose with the sliders.
+- **Mercury.** 59 colours taken from an enhanced-colour photo of the planet Mercury: violets, bright blues, teals, lime-yellows and hot reds. To adjust them, press "Copy to my own colours".
 - **My own colours.** Add colours one by one, paste a list of colour codes (like `#e63946`), or copy the colours your tags have now.
 
 If every colour on your list is in use, new tags get colours from the spectrum sliders instead.
 
 Press **Save** to use the new colours for future tags. Press **Save and recolour tags** to update existing tags now as well. Colours you chose yourself are kept unless you press **Save and recolour every tag**.
-
-If you used version 1.0, the colours the plugin had picked automatically are swapped for Mercury colours once, when you update. Colours you chose yourself are kept.
 
 ## Spread-out links
 
@@ -121,6 +119,7 @@ Normally, a note's links can bunch up on one side like a broom. With this on, th
 - **Hovering, clicking, searching and filters** in the Graph view all work as normal.
 - **Dragging a note** moves it, and it stays where you drop it.
 - **Editing notes doesn't shuffle the graph.** When you add a note or a link, only that note and its neighbours move.
+- **Clusters stay apart.** With dynamic spacing on, the plugin finds clusters (groups of notes linked mostly to each other) and keeps a clear gap around each one, so every group reads as its own island. Bigger clusters get more room, and the gap is measured again on every step, so it keeps up as the layout grows.
 - **Turning it off** gives the graph back to Obsidian's normal movement.
 
 ### Settings
@@ -132,7 +131,8 @@ Normally, a note's links can bunch up on one side like a broom. With this on, th
 | Match the graph's link distance | Use the line length from the Graph view's own "Forces" settings. |
 | Spoke length | How long the lines are, when not matching the graph. |
 | Splay strength | How firmly the links are pushed into an even spread. |
-| Spacing | How much space there is between unrelated notes. |
+| Spacing | How much space there is between unrelated notes, from 0.2 to 6 (default 3). With dynamic spacing on, it also sets the gap between clusters. |
+| Dynamic spacing | Keeps clusters apart, as described above. On by default. Only used with the "Spokes" style. |
 | Animate | Shows notes gliding into place. Turn this off on slow devices. |
 | Rearrange the graph again | Arranges the graph again from the start. |
 
@@ -142,8 +142,8 @@ Normally a dot can only show one tag colour. With this on, a note with several t
 
 There are two styles:
 
-- **Ring around the dot** (the default). The dot stays as it is, with a thin ring of coloured arcs around it, one for each colour. This keeps busy notes calm.
-- **Filled pie.** The whole dot becomes a pie chart, with a slice for each colour. The note you have open keeps its highlight ring around its pie.
+- **Filled pie** (the default). The whole dot becomes a pie chart, with a slice for each colour. The note you have open keeps its highlight ring around its pie.
+- **Ring around the dot.** The dot stays as it is, with a thin ring of coloured arcs around it, one for each colour. This keeps busy notes calm.
 
 By default the colours only appear once you zoom in, at the same point as note names. Zoomed out, dots stay their normal single colour, so the graph doesn't get noisy. Pointing at a note shows the colours of that note and its neighbours, even when zoomed out.
 
@@ -153,7 +153,7 @@ If tag colours are switched off, the dots use your Graph view colour groups inst
 
 | Setting | What it does |
 | --- | --- |
-| Style | "Ring around the dot" or "Filled pie". |
+| Style | "Filled pie" or "Ring around the dot". |
 | Only show when zoomed in | Colours fade in with note names as you zoom in. Turn off to always show them. |
 | Show on | Only notes with two or more tag colours, or every note with a tag colour. |
 | Size slices by tag count | Off: every colour gets an equal share. On: a colour that covers more of the note's tags gets a bigger share. |
@@ -233,6 +233,30 @@ In testing with the Project Mercury vault (7,549 dots), the graph drew about 2.5
 | Switch to the map below | How small the dots get (in pixels) before the map takes over completely. It starts fading in at about twice this size. |
 | Map softness | How blurred the map is, from 0 (crisp) to 3 (very soft). |
 | Map colours | Use tag colours, or a single colour. Either way, busier areas are lighter. |
+
+## Big vaults
+
+The plugin is built to keep graphs with thousands of notes smooth. It does this on its own:
+
+- Layouts run in the background, away from the app, and only notes that have moved are updated while they animate.
+- Labels are fitted using their measured size, so crowded areas don't slow every frame down.
+- Work that hasn't changed since the last frame (slice fading, checking dots, hiding shapes) is skipped.
+- Line labels only read notes that contain links.
+
+If a big graph still feels slow, try these, roughly in order:
+
+1. Lower **Most labels at once** (under Line labels).
+2. Raise **How much to drop** (under Smoother big graphs), or switch to the map sooner with **Switch to the map below**.
+3. Turn off **Animate** (under Spread-out links): the graph jumps straight to its new layout.
+4. Keep **Only show when zoomed in** on (under Pie-chart dots): faded-out slices aren't drawn at all.
+
+## Default settings
+
+To start again, go to **Settings > Mercury Visualiser > Defaults > Restore default settings** (or run "Restore default settings" from the command palette). It asks first, then puts every option back to the recommended defaults. Tag colours are picked again from the default colours, but any colour you chose or locked yourself stays.
+
+The defaults are: every feature on, tag colours from the whole spectrum, "Spokes" layout with dynamic spacing and Spacing at 3, filled pie-chart dots that appear when you zoom in (with lines between slices, on notes with two or more tag colours), line labels next to the names coloured by the two notes they join, and all of the "Smoother big graphs" options.
+
+Updating the plugin never changes options you've already set. Use this button to pick up new defaults.
 
 ## Good to know
 

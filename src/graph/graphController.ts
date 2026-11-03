@@ -49,6 +49,8 @@ interface PieState {
 
 /** Roughly how many node positions per second are streamed into the Graph view while a layout animates. */
 const PINS_PER_SECOND = 6000;
+/** While a layout animates, notes that moved less than this (graph units) since their last pin aren't sent again. */
+const PIN_MIN_MOVE = 1.5;
 
 /**
  * Attaches to one core Graph view (global or local) and layers the three
@@ -70,6 +72,11 @@ export class GraphController {
 	private graphicsUnsupported = false;
 	/** Current zoom fade for slices (0 hidden … 1 shown). */
 	private pieFade = 1;
+	/** What the slices were last faded for, so unchanged frames can skip the work. */
+	private fadedFor: { base: number; highlight: CoreGraphNode | null; pies: number; version: number } | null = null;
+	/** What the last full pie check saw, so quiet frames can skip it. */
+	private syncedFor: { version: number; nodes: unknown; length: number; complete: boolean } | null = null;
+	private syncFrame = 0;
 
 	// Radial layout
 	private job: LayoutHandle | null = null;
@@ -79,6 +86,8 @@ export class GraphController {
 	private prevLinks: Set<string> | null = null;
 	private layoutTimer: number | null = null;
 	private lastApplied = 0;
+	/** Where each pinned note was last sent. */
+	private pinnedAt = new Map<string, [number, number]>();
 	private dragNode: CoreGraphNode | null = null;
 
 	private toolbar: GraphToolbar | null = null;
@@ -219,7 +228,7 @@ export class GraphController {
 
 	/** Safety net in case the render hook is bypassed: called about once a second. */
 	tick(): void {
-		if (!this.destroyed) this.syncPies();
+		if (!this.destroyed) this.syncPies(true);
 	}
 
 	private afterRender(): void {
@@ -246,6 +255,8 @@ export class GraphController {
 
 	private onData(): void {
 		if (this.destroyed) return;
+		// New data may mean new notes in the Graph view's physics: send every position again next time.
+		this.pinnedAt.clear();
 		this.invalidatePies();
 		// Forget pie bookkeeping for nodes that left the graph.
 		const live = new Set(this.renderer.nodes);
@@ -278,17 +289,28 @@ export class GraphController {
 		return { slices: this.host.slicesFor(node.id), min: s.pieMinColours };
 	}
 
-	private syncPies(): void {
+	/** Draws, updates or removes pies. Without `full`, quiet frames are skipped once every dot has been seen. */
+	private syncPies(full = false): void {
 		const enabled = this.host.settings.pieNodes && !this.graphicsUnsupported;
 		if (!enabled && this.pieNodes.size === 0) return;
 		const version = this.pieVersion;
+		// Nothing changed since the last full check: only look again every so often,
+		// in case the Graph view rebuilt some dots on its own.
+		const nodes = this.renderer.nodes;
+		const s = this.syncedFor;
+		if (!full && s && s.complete && s.version === version && s.nodes === nodes && s.length === nodes.length && ++this.syncFrame % 12 !== 0) {
+			return;
+		}
+		let complete = true;
 		let drew = false;
 		for (const node of this.renderer.nodes) {
 			const st = this.pies.get(node);
 			const circle = node.circle;
+			if (!circle) complete = false;
 			if (st && st.version === version && st.circle === circle && (!st.g || st.g.parent === circle)) continue;
 			drew = this.updatePie(node, st, enabled, version) || drew;
 		}
+		this.syncedFor = { version, nodes, length: nodes.length, complete };
 		if (drew) this.renderer.changed();
 	}
 
@@ -384,6 +406,11 @@ export class GraphController {
 		const base = this.host.settings.pieFade ? labelFade(this.renderer) : 1;
 		this.pieFade = base;
 		const hl = highlightOf(this.renderer);
+		const f = this.fadedFor;
+		if (f && Math.abs(f.base - base) < 0.005 && f.highlight === hl && f.pies === this.pieNodes.size && f.version === this.pieVersion) {
+			return false;
+		}
+		this.fadedFor = { base, highlight: hl, pies: this.pieNodes.size, version: this.pieVersion };
 		const near = new Set<string>();
 		if (hl) {
 			near.add(hl.id);
@@ -560,7 +587,7 @@ export class GraphController {
 			const focus = this.view.file?.path;
 			root = nodes.findIndex((n) => n.type === "focused" || n.id === focus);
 		}
-		const settingsKey = `${s.radialStyle}|${Math.round(spokeLength)}|${s.splayStrength}|${s.repelMultiplier}`;
+		const settingsKey = `${s.radialStyle}|${Math.round(spokeLength)}|${s.splayStrength}|${s.repelMultiplier}|${s.dynamicSpacing ? "c" : ""}`;
 		const cacheKey = this.kind === "graph" ? "graph" : null;
 
 		// Reopening the main graph: show the remembered layout straight away.
@@ -647,6 +674,7 @@ export class GraphController {
 				spokeLength: Math.max(20, spokeLength),
 				splay: s.splayStrength,
 				repel: s.repelMultiplier,
+				clusters: s.dynamicSpacing,
 				root,
 				alpha: adjust ? 0.3 : 1,
 			},
@@ -664,7 +692,7 @@ export class GraphController {
 				const gap = Math.max(90, (nodes.length / PINS_PER_SECOND) * 1000);
 				if (now - this.lastApplied < gap) return;
 				this.lastApplied = now;
-				this.pinPositions(nodes, pos);
+				this.pinPositions(nodes, pos, PIN_MIN_MOVE);
 			},
 			onDone: (pos) => {
 				this.job = null;
@@ -697,23 +725,31 @@ export class GraphController {
 		this.toolbar?.setProgress(null);
 	}
 
-	/** Fixes nodes at the given positions inside the Graph view's own physics. */
-	private pinPositions(nodes: readonly CoreGraphNode[], positions: Float64Array): void {
+	/**
+	 * Fixes nodes at the given positions inside the Graph view's own physics.
+	 * Notes that have barely moved since they were last pinned are skipped, which
+	 * saves thousands of messages per step on big graphs as the layout settles.
+	 */
+	private pinPositions(nodes: readonly CoreGraphNode[], positions: Float64Array, minMove = -1): void {
 		const worker = this.renderer.worker;
 		if (!worker || this.destroyed || !this.radialApplies()) return;
 		const dragging = this.renderer.dragNode;
-		const last = nodes.length - 1;
-		for (let i = 0; i <= last; i++) {
+		let pending: Record<string, unknown> | null = null;
+		for (let i = 0; i < nodes.length; i++) {
 			const node = nodes[i];
 			if (node === dragging) continue;
 			const x = positions[2 * i];
 			const y = positions[2 * i + 1];
 			if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-			const msg: Record<string, unknown> = { forceNode: { id: node.id, x, y } };
-			if (i === last) Object.assign(msg, { alpha: 0.1, alphaTarget: 0, run: true });
-			worker.postMessage(msg);
+			const was = this.pinnedAt.get(node.id);
+			if (was && this.pinned.has(node.id) && Math.abs(was[0] - x) + Math.abs(was[1] - y) <= minMove) continue;
+			if (pending) worker.postMessage(pending);
+			pending = { forceNode: { id: node.id, x, y } };
+			this.pinnedAt.set(node.id, [x, y]);
 			this.pinned.add(node.id);
 		}
+		// The last message also wakes the Graph view's physics so it picks the new places up.
+		if (pending) worker.postMessage(Object.assign(pending, { alpha: 0.1, alphaTarget: 0, run: true }));
 		this.renderer.changed();
 	}
 
@@ -722,9 +758,11 @@ export class GraphController {
 		const worker = this.renderer.worker;
 		if (!worker || this.pinned.size === 0) {
 			this.pinned.clear();
+			this.pinnedAt.clear();
 			return;
 		}
 		const ids = [...this.pinned];
+		this.pinnedAt.clear();
 		ids.forEach((id, i) => {
 			const msg: Record<string, unknown> = { forceNode: { id, x: null, y: null } };
 			if (i === ids.length - 1) Object.assign(msg, { alpha: 0.3, alphaTarget: 0, run: true });
