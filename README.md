@@ -195,6 +195,7 @@ is labelled "Taskmaster UK › S3".
 
 To keep the graph tidy:
 
+- **Labels hold still while you zoom.** A label that's showing keeps its place for as long as it fits. New labels wait until you stop zooming, then fade in, and labels that no longer fit fade out instead of jumping somewhere else.
 - **Labels fade out as you zoom out**, at the same point as note names. This uses the Graph view's own "Text fade threshold" setting (under "Display").
 - **Hovering a note** shows the labels of all its lines, even when zoomed out.
 - **Labels never sit on top of each other** or on top of note names.
