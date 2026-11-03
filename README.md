@@ -234,6 +234,22 @@ In testing with the Project Mercury vault (7,549 dots), the graph drew about 2.5
 | Map softness | How blurred the map is, from 0 (crisp) to 3 (very soft). |
 | Map colours | Use tag colours, or a single colour. Either way, busier areas are lighter. |
 
+## Big vaults
+
+The plugin is built to keep graphs with thousands of notes smooth. It does this on its own:
+
+- Layouts run in the background, away from the app, and only notes that have moved are updated while they animate.
+- Labels are fitted using their measured size, so crowded areas don't slow every frame down.
+- Work that hasn't changed since the last frame (slice fading, checking dots, hiding shapes) is skipped.
+- Line labels only read notes that contain links.
+
+If a big graph still feels slow, try these, roughly in order:
+
+1. Lower **Most labels at once** (under Line labels).
+2. Raise **How much to drop** (under Smoother big graphs), or switch to the map sooner with **Switch to the map below**.
+3. Turn off **Animate** (under Spread-out links): the graph jumps straight to its new layout.
+4. Keep **Only show when zoomed in** on (under Pie-chart dots): faded-out slices aren't drawn at all.
+
 ## Default settings
 
 To start again, go to **Settings > Mercury Visualiser > Defaults > Restore default settings** (or run "Restore default settings" from the command palette). It asks first, then puts every option back to the recommended defaults. Tag colours are picked again from the default colours, but any colour you chose or locked yourself stays.
