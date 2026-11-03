@@ -59,6 +59,9 @@ export interface Layout {
 }
 
 const ALPHA_MIN = 0.002;
+/** Gap between clusters with dynamic spacing, in link lengths (scaled by √Spacing). */
+const CLUSTER_GAP = 0.7;
+const CLUSTER_STRENGTH = 0.6;
 /** Roughly how many steps a layout takes from a standing start. */
 const TARGET_TICKS = 160;
 
@@ -178,7 +181,8 @@ export function createLayout(input: LayoutInput): Layout {
 	// Dynamic spacing: whole clusters keep apart, by a gap that follows the Spacing setting.
 	// (Not while settling in a few changed notes with the rest held still: the push is for whole clusters.)
 	if (params.clusters && !rings && !input.fixed) {
-		sim.force("clusters", forceClusters(findClusters(adj), L * 0.7 * Math.sqrt(Math.max(0.2, params.repel))));
+		const gap = L * CLUSTER_GAP * Math.sqrt(Math.max(0.2, params.repel));
+		sim.force("clusters", forceClusters(findClusters(adj), { linkLength: L, gap, strength: CLUSTER_STRENGTH }));
 	}
 
 	if (rings) {

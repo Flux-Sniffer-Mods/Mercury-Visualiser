@@ -92,21 +92,31 @@ export interface ClusterForce {
  * plus a gap. Overlapping bodies are pushed apart, and the push is shared by
  * every note in the cluster, so a cluster moves as one without being squashed.
  */
-export function forceClusters(
-	cluster: Int32Array,
+export interface ClusterOptions {
+	/** Link length: sets how big a cluster of a given number of notes is expected to be. */
+	linkLength: number;
 	/** Gap kept between neighbouring clusters. */
-	gap: number,
+	gap: number;
 	/** Groups smaller than this are left alone. */
-	minSize = 4,
-	strength = 0.6,
-): ClusterForce {
+	minSize?: number;
+	strength?: number;
+}
+
+export function forceClusters(cluster: Int32Array, options: ClusterOptions): ClusterForce {
+	const { linkLength: L, gap } = options;
+	const minSize = options.minSize ?? 4;
+	const strength = options.strength ?? 0.6;
+	/** Most a cluster can be pushed in one step, so nothing gets flung. */
+	const maxPush = L * 0.4;
 	let nodes: MovableNode[] = [];
 	let members: number[][] = [];
 	let bodies: ClusterBody[] = [];
 	const collide = forceCollide<ClusterBody>((b) => b.r).strength(strength).iterations(2);
 
-	const force = ((_alpha: number) => {
+	const force = ((alpha: number) => {
 		if (bodies.length < 2) return;
+		// Push hardest early on and ease off as the layout settles, like the other forces.
+		const ease = Math.min(1, alpha * 4);
 		// Measure each cluster: its middle, its spread, and how it's moving.
 		for (let k = 0; k < bodies.length; k++) {
 			const list = members[k];
@@ -133,17 +143,25 @@ export function forceClusters(
 			b.y = cy;
 			b.vx = svx / list.length;
 			b.vy = svy / list.length;
-			// About the radius that holds most of the cluster's notes, plus the gap.
-			b.r = Math.sqrt(spread / list.length) * 1.25 + gap / 2;
+			// About the radius that holds most of the cluster's notes, plus the gap. Capped at what a
+			// cluster this size should need: links to other clusters stretch it, and a stretched
+			// cluster must not push harder (that feeds on itself and blows the layout apart).
+			const expected = L * 0.55 * Math.sqrt(list.length);
+			b.r = Math.min(Math.sqrt(spread / list.length) * 1.25, expected * 1.5) + gap / 2;
 		}
 		const before = bodies.map((b) => [b.vx, b.vy]);
 		collide.radius((b) => b.r);
 		collide(1);
 		// Share each cluster's push between all of its notes.
 		for (let k = 0; k < bodies.length; k++) {
-			const dvx = bodies[k].vx - before[k][0];
-			const dvy = bodies[k].vy - before[k][1];
+			let dvx = (bodies[k].vx - before[k][0]) * ease;
+			let dvy = (bodies[k].vy - before[k][1]) * ease;
 			if (dvx === 0 && dvy === 0) continue;
+			const push = Math.hypot(dvx, dvy);
+			if (push > maxPush) {
+				dvx *= maxPush / push;
+				dvy *= maxPush / push;
+			}
 			for (const i of members[k]) {
 				const d = nodes[i];
 				if (d.fx != null) continue;
