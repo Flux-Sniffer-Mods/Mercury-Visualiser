@@ -35,8 +35,13 @@ export class LinkLabelIndex {
 	}
 
 	private async buildAll(): Promise<void> {
-		const files = this.app.vault.getMarkdownFiles();
-		const BATCH = 40;
+		// Only notes with links can label a line, and Obsidian already knows which those are.
+		const files = this.app.vault.getMarkdownFiles().filter((file) => {
+			const cache = this.app.metadataCache.getFileCache(file);
+			if (!cache) return true;
+			return (cache.links?.length ?? 0) > 0 || (cache.embeds?.length ?? 0) > 0 || (cache.frontmatterLinks?.length ?? 0) > 0;
+		});
+		const BATCH = 64;
 		for (let i = 0; i < files.length; i += BATCH) {
 			await Promise.all(
 				files.slice(i, i + BATCH).map(async (file) => {

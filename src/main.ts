@@ -1,5 +1,6 @@
 import { Notice, Plugin, TFile } from "obsidian";
 import { ColourPoolModal } from "./colourPoolModal";
+import { ConfirmModal } from "./confirmModal";
 import { DiagnosticsModal } from "./diagnosticsModal";
 import { GraphController, type ControllerHost } from "./graph/graphController";
 import { GraphManager } from "./graph/graphManager";
@@ -8,7 +9,7 @@ import { listingColour } from "./labels/labelColour";
 import { LinkLabelIndex } from "./labels/linkLabelIndex";
 import { LayoutCache } from "./layout/layoutCache";
 import { LayoutRunner } from "./layout/layoutRunner";
-import { mergeSettings, type MercurySettings } from "./settings";
+import { DEFAULT_SETTINGS, mergeSettings, type MercurySettings } from "./settings";
 import { MercurySettingTab } from "./settingsTab";
 import { TagColourManager } from "./tags/tagColours";
 
@@ -38,8 +39,6 @@ export default class MercuryVisualiserPlugin extends Plugin {
 	async onload(): Promise<void> {
 		const saved = (await this.loadData()) as Partial<MercurySettings> | null;
 		this.settings = mergeSettings(saved);
-		// Settings from before colour pools existed: redo the automatic colours once in the Mercury palette.
-		const upgradeToMercury = !!saved && !saved.colourPool && Object.keys(saved.palette ?? {}).length > 0;
 		this.layout = new LayoutRunner();
 		this.layoutCache = new LayoutCache(
 			this.app.vault.adapter,
@@ -86,10 +85,6 @@ export default class MercuryVisualiserPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(async () => {
 			await this.layoutCache.load();
 			await this.tags.refresh({ reindex: true });
-			if (upgradeToMercury && this.settings.autoColours) {
-				await this.tags.respreadAll();
-				new Notice("Mercury Visualiser: tag colours now come from the Mercury palette. Colours you chose yourself are kept.", 8000);
-			}
 			this.ready = true;
 			this.graphs.scan();
 			if (this.settings.linkLabels) void this.labelIndex.ensureBuilt();
@@ -191,6 +186,53 @@ export default class MercuryVisualiserPlugin extends Plugin {
 		}).open();
 	}
 
+	/** Asks, then puts every option back to its default. */
+	confirmRestoreDefaults(afterRestore?: () => void): void {
+		new ConfirmModal(
+			this.app,
+			"Restore default settings",
+			"Every option goes back to its default. Tag colours are picked again from the default colours, except ones you chose or locked yourself, which stay.",
+			"Restore defaults",
+			async () => {
+				await this.restoreDefaults();
+				afterRestore?.();
+			},
+		).open();
+	}
+
+	/**
+	 * Every option back to its default. The tag palette is kept, but its
+	 * unlocked colours are picked again from the default colour pool; colours
+	 * chosen or locked by hand stay.
+	 */
+	async restoreDefaults(): Promise<void> {
+		const before = this.settings;
+		const fresh = mergeSettings(null);
+		fresh.palette = before.palette;
+		fresh.managedGroups = before.managedGroups;
+		fresh.createdGroups = before.createdGroups;
+		fresh.nextOrder = before.nextOrder;
+		this.settings = fresh;
+		await this.saveSettings();
+
+		const changed = (keys: Array<keyof MercurySettings>) => keys.some((k) => JSON.stringify(before[k]) !== JSON.stringify(fresh[k]));
+		if (before.autoColours && !fresh.autoColours && before.syncGraphColourGroups) await this.tags.removeCreatedGroups();
+		await this.tags.refresh({ reindex: true });
+		if (fresh.autoColours) await this.tags.respreadAll();
+		if (changed(["linkLabelMode"])) this.labelIndex.bump();
+		if (fresh.linkLabels) void this.labelIndex.ensureBuilt();
+		this.colourEpoch++;
+		this.graphs.update();
+		this.graphs.invalidatePies();
+		const layoutKeys = Object.keys(DEFAULT_SETTINGS).filter((k) =>
+			/^(radial|spokeLength|splayStrength|repelMultiplier|dynamicSpacing|matchGraphLinkDistance)/.test(k),
+		) as Array<keyof MercurySettings>;
+		if (fresh.radialLayout && changed(layoutKeys)) this.graphs.rerunLayout();
+		this.graphs.forEach((c) => c.requestRedraw());
+		if (this.settingTab.containerEl.isShown()) this.settingTab.display();
+		new Notice("Default settings restored", 2500);
+	}
+
 	/** Switches one of the three features on or off, from anywhere in the app. */
 	async setFeature(feature: Feature, on: boolean): Promise<void> {
 		if (this.settings[feature] === on) return;
@@ -233,6 +275,12 @@ export default class MercuryVisualiserPlugin extends Plugin {
 				}
 				this.graphs.rerunLayout();
 			},
+		});
+
+		this.addCommand({
+			id: "restore-default-settings",
+			name: "Restore default settings",
+			callback: () => this.confirmRestoreDefaults(),
 		});
 
 		this.addCommand({

@@ -10,6 +10,7 @@ import {
 	type SimulationLinkDatum,
 	type SimulationNodeDatum,
 } from "d3-force";
+import { findClusters, forceClusters } from "./clusters";
 import { forceSplay } from "./splayForce";
 import { buildAdjacency, radialTree } from "./radialTree";
 
@@ -23,6 +24,8 @@ export interface LayoutParams {
 	splay: number;
 	/** Multiplier on how strongly unrelated notes push each other apart. */
 	repel: number;
+	/** Dynamic spacing: find clusters and keep a gap between them that grows with their size. */
+	clusters?: boolean;
 	/** Index of the centre node for the "rings" style (-1 picks the best-connected node). */
 	root: number;
 	/** 1 = lay out from scratch, lower values = adjust the current layout gently. */
@@ -172,6 +175,11 @@ export function createLayout(input: LayoutInput): Layout {
 		),
 	);
 	if (splay > 0) sim.force("splay", forceSplay(adj, rings ? splay * 0.5 : splay, L * 2));
+	// Dynamic spacing: whole clusters keep apart, by a gap that follows the Spacing setting.
+	// (Not while settling in a few changed notes with the rest held still: the push is for whole clusters.)
+	if (params.clusters && !rings && !input.fixed) {
+		sim.force("clusters", forceClusters(findClusters(adj), L * 0.7 * Math.sqrt(Math.max(0.2, params.repel))));
+	}
 
 	if (rings) {
 		const root = params.root >= 0 && params.root < n ? params.root : pickRoot(adj);

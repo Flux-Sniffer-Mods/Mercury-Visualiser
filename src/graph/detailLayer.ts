@@ -92,7 +92,8 @@ export class DetailLayer {
 		if (this.frame % 15 === 1) this.graphArea = this.measureGraphArea();
 		const viewArea = (view.x1 - view.x0) * (view.y1 - view.y0);
 		const wantCulling = this.host.culling() && this.graphArea > 0 && viewArea < this.graphArea * 0.6;
-		if (wantCulling !== this.cullingOn || (wantCulling && this.frame % 30 === 0)) {
+		// Re-apply now and then too: the Graph view may have made new shapes.
+		if (wantCulling !== this.cullingOn || (wantCulling && this.frame % 120 === 0)) {
 			this.setCulling(wantCulling);
 		}
 
@@ -174,6 +175,14 @@ export class DetailLayer {
 		const changed = !prev || this.hiddenForMap !== mapHidden || prev.level !== level || prev.highlight !== highlight;
 		this.hiddenForMap = mapHidden;
 		this.thinApplied = { level, highlight, nodes, length: nodes.length };
+
+		// Nothing to hide: bring back whatever was hidden, without walking the whole graph.
+		if (!mapHidden && level <= 0) {
+			for (const o of this.hiddenObjects) o.renderable = true;
+			const had = this.hiddenObjects.size > 0;
+			this.hiddenObjects = new Set();
+			return changed && had;
+		}
 
 		const keep = new Set<CoreGraphNode>();
 		if (highlight) {

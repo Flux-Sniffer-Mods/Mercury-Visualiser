@@ -65,8 +65,8 @@ export class ColourPoolModal extends Modal {
 
 		new Setting(contentEl).setName("Pick from").addDropdown((d) =>
 			d
-				.addOption("mercury", "Mercury (sampled from the planet)")
 				.addOption("spectrum", "The whole spectrum")
+				.addOption("mercury", "Mercury (sampled from the planet)")
 				.addOption("custom", "My own colours")
 				.setValue(this.pool.mode)
 				.onChange((v) => {

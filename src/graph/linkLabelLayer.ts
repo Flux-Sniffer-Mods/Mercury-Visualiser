@@ -149,6 +149,12 @@ export class LinkLabelLayer {
 	private Text: TextCtor | null = null;
 	private style: PixiTextStyle | null = null;
 	private lastSignature = "";
+	/** Label text → its size in the label style (unscaled), so labels can be fitted before any are drawn. */
+	private sizes = new Map<string, { w: number; h: number }>();
+	private measureCtx: CanvasRenderingContext2D | null = null;
+	private font = "";
+	private sample: PixiText | null = null;
+	private sampleFrame = 0;
 
 	constructor(private renderer: CoreGraphRenderer, private host: LinkLabelHost) {}
 
@@ -181,8 +187,23 @@ export class LinkLabelLayer {
 
 		// Candidates, in screen space: the hovered note's lines first, then nearest the middle.
 		const candidates: Candidate[] = [];
+		// Quick reject in graph space: lines wholly to one side of the view.
+		const mx = (view.x1 - view.x0) * 0.05;
+		const my = (view.y1 - view.y0) * 0.05;
+		const vx0 = view.x0 - mx;
+		const vx1 = view.x1 + mx;
+		const vy0 = view.y0 - my;
+		const vy1 = view.y1 + my;
 		for (const item of this.labelled) {
 			const { hub, other } = item;
+			if (
+				(hub.x < vx0 && other.x < vx0) ||
+				(hub.x > vx1 && other.x > vx1) ||
+				(hub.y < vy0 && other.y < vy0) ||
+				(hub.y > vy1 && other.y > vy1)
+			) {
+				continue;
+			}
 			const hot = !!highlight && (hub === highlight || other === highlight);
 			if (!hot && fade < 0.03) continue;
 			const ps = toScreen(hub.x, hub.y);
@@ -270,11 +291,16 @@ export class LinkLabelLayer {
 		const used = new Set<PixiText>();
 		const fans = new Set<string>();
 		const placedItems = new Set<Labelled>();
+		const mode = this.host.labelColourMode();
+		// Crowded views can have thousands of candidates: stop trying after a fair number of misses.
+		let attempts = 0;
+		const maxAttempts = max * 10;
 		let signature = "";
 		for (const cand of candidates) {
-			if (used.size >= max) break;
+			if (used.size >= max || attempts >= maxAttempts) break;
 			if (fans.has(cand.fan)) continue;
 			if (cand.fallback && placedItems.has(cand.item)) continue;
+			attempts++;
 			const { item, slot, hot } = cand;
 			const { link, label, hub, other } = item;
 
@@ -290,19 +316,10 @@ export class LinkLabelLayer {
 			}
 			const anchorX = cand.middle ? 0.5 : flipped ? 1 : 0;
 
-			const text = this.textFor(link, slot, label);
-			text.scale.set(scale);
-			text.anchor?.set(anchorX, 1);
-			const mode = this.host.labelColourMode();
-			let tint = 0xffffff;
-			if (mode !== "off") {
-				const listing = mode === "listing" ? this.host.listingColour(link.source.id, link.target.id) : null;
-				tint = listing !== null ? lightenForLabel(listing) : labelTint(this.host.colourOf(hub), this.host.colourOf(other));
-			}
-			if (text.tint !== tint) text.tint = tint;
-
-			const w = (text as unknown as { width: number }).width * view.scale;
-			const h = (text as unknown as { height: number }).height * view.scale;
+			// Fit the label using its measured size; the text itself is only made once it has a place.
+			const size = this.sizeOf(label);
+			const w = size.w * scale * view.scale;
+			const h = size.h * scale * view.scale;
 			const dx = Math.cos(angle);
 			const dy = Math.sin(angle);
 			// The box sits just above the line.
@@ -338,6 +355,16 @@ export class LinkLabelLayer {
 			for (const c of cells) taken.add(c);
 			fans.add(cand.fan);
 			placedItems.add(item);
+
+			const text = this.textFor(link, slot, label);
+			text.scale.set(scale);
+			text.anchor?.set(anchorX, 1);
+			let tint = 0xffffff;
+			if (mode !== "off") {
+				const listing = mode === "listing" ? this.host.listingColour(link.source.id, link.target.id) : null;
+				tint = listing !== null ? lightenForLabel(listing) : labelTint(this.host.colourOf(hub), this.host.colourOf(other));
+			}
+			if (text.tint !== tint) text.tint = tint;
 
 			const world = m.applyInverse(placedAt);
 			text.position.set(world.x, world.y);
@@ -383,6 +410,14 @@ export class LinkLabelLayer {
 	 * hides the rest, and their sizes go stale.
 	 */
 	private sampleText(): PixiText | null {
+		// Re-check now and then, or when the one we have stops being usable.
+		const s = this.sample;
+		if (s && !s.destroyed && s.visible !== false && s.alpha > 0.05 && ++this.sampleFrame % 30 !== 0) return s;
+		this.sample = this.findSample();
+		return this.sample;
+	}
+
+	private findSample(): PixiText | null {
 		let any: PixiText | null = null;
 		for (const n of this.renderer.nodes) {
 			const t = n.text;
@@ -408,7 +443,37 @@ export class LinkLabelLayer {
 		} else if (text.text !== label) {
 			text.text = label;
 		}
+		// Swap the estimate for the real size, now the text exists.
+		const sx = Math.abs(text.scale.x) || 1;
+		const sy = Math.abs(text.scale.y) || 1;
+		const real = { w: (text as unknown as { width: number }).width / sx, h: (text as unknown as { height: number }).height / sy };
+		if (real.w > 0 && real.h > 0) this.sizes.set(label, real);
 		return text;
+	}
+
+	/** A label's size in the label style, before scaling: measured once, then remembered. */
+	private sizeOf(label: string): { w: number; h: number } {
+		const known = this.sizes.get(label);
+		if (known) return known;
+		const style = this.style ?? {};
+		const fontSize = typeof style.fontSize === "number" ? style.fontSize : parseFloat(String(style.fontSize ?? 12)) || 12;
+		if (!this.measureCtx) {
+			this.measureCtx = document.createElement("canvas").getContext("2d");
+			const toFont = (style as { toFontString?: () => string }).toFontString;
+			this.font =
+				typeof toFont === "function"
+					? toFont.call(style)
+					: `italic ${String(style.fontWeight ?? "normal")} ${fontSize}px ${String(style.fontFamily ?? "sans-serif")}`;
+		}
+		let w = label.length * fontSize * 0.55;
+		if (this.measureCtx) {
+			this.measureCtx.font = this.font;
+			w = this.measureCtx.measureText(label).width;
+		}
+		const size = { w: w + 4, h: fontSize * 1.3 };
+		if (this.sizes.size > 20000) this.sizes.clear();
+		this.sizes.set(label, size);
+		return size;
 	}
 
 	/** A note's dot radius on screen, in pixels. */

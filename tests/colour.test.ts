@@ -93,20 +93,28 @@ describe("colour pools", () => {
 		expect(hueSteps(120, 120)).toEqual([120]);
 	});
 
-	it("defaults to the Mercury palette, most distinct colours first", () => {
-		expect(DEFAULT_POOL.mode).toBe("mercury");
-		const picks = spreadColours(MERCURY_COLOURS.length);
+	const mercury: ColourPool = { ...DEFAULT_POOL, mode: "mercury" };
+
+	it("defaults to the whole spectrum", () => {
+		expect(DEFAULT_POOL.mode).toBe("spectrum");
+		const picks = spreadColours(12);
+		for (const c of picks) expect(MERCURY_COLOURS).not.toContain(c);
+		expect(minPairDistance(picks)).toBeGreaterThan(0.1);
+	});
+
+	it("takes the Mercury palette most distinct colours first", () => {
+		const picks = spreadColours(MERCURY_COLOURS.length, [], mercury);
 		expect(picks[0]).toBe(MERCURY_COLOURS[0]);
 		expect(new Set(picks)).toEqual(new Set(MERCURY_COLOURS));
 		expect(minPairDistance(picks.slice(0, 12))).toBeGreaterThan(0.1);
 		// After the palette is used up, new tags still get new colours.
-		const more = spreadColours(MERCURY_COLOURS.length + 5).slice(MERCURY_COLOURS.length);
+		const more = spreadColours(MERCURY_COLOURS.length + 5, [], mercury).slice(MERCURY_COLOURS.length);
 		for (const c of more) expect(MERCURY_COLOURS).not.toContain(c);
 	});
 
 	it("picks the Mercury colour least like the colours already taken", () => {
 		const taken = [MERCURY_COLOURS[0], MERCURY_COLOURS[1]];
-		const next = pickDistinctColour(taken);
+		const next = pickDistinctColour(taken, mercury);
 		expect(MERCURY_COLOURS).toContain(next);
 		expect(taken).not.toContain(next);
 	});
