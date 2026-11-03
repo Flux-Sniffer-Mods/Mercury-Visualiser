@@ -75,7 +75,7 @@ export class GraphController {
 	/** What the slices were last faded for, so unchanged frames can skip the work. */
 	private fadedFor: { base: number; highlight: CoreGraphNode | null; pies: number; version: number } | null = null;
 	/** What the last full pie check saw, so quiet frames can skip it. */
-	private syncedFor: { version: number; nodes: unknown; length: number } | null = null;
+	private syncedFor: { version: number; nodes: unknown; length: number; complete: boolean } | null = null;
 	private syncFrame = 0;
 
 	// Radial layout
@@ -228,7 +228,7 @@ export class GraphController {
 
 	/** Safety net in case the render hook is bypassed: called about once a second. */
 	tick(): void {
-		if (!this.destroyed) this.syncPies();
+		if (!this.destroyed) this.syncPies(true);
 	}
 
 	private afterRender(): void {
@@ -289,7 +289,8 @@ export class GraphController {
 		return { slices: this.host.slicesFor(node.id), min: s.pieMinColours };
 	}
 
-	private syncPies(): void {
+	/** Draws, updates or removes pies. Without `full`, quiet frames are skipped once every dot has been seen. */
+	private syncPies(full = false): void {
 		const enabled = this.host.settings.pieNodes && !this.graphicsUnsupported;
 		if (!enabled && this.pieNodes.size === 0) return;
 		const version = this.pieVersion;
@@ -297,15 +298,19 @@ export class GraphController {
 		// in case the Graph view rebuilt some dots on its own.
 		const nodes = this.renderer.nodes;
 		const s = this.syncedFor;
-		if (s && s.version === version && s.nodes === nodes && s.length === nodes.length && ++this.syncFrame % 12 !== 0) return;
-		this.syncedFor = { version, nodes, length: nodes.length };
+		if (!full && s && s.complete && s.version === version && s.nodes === nodes && s.length === nodes.length && ++this.syncFrame % 12 !== 0) {
+			return;
+		}
+		let complete = true;
 		let drew = false;
 		for (const node of this.renderer.nodes) {
 			const st = this.pies.get(node);
 			const circle = node.circle;
+			if (!circle) complete = false;
 			if (st && st.version === version && st.circle === circle && (!st.g || st.g.parent === circle)) continue;
 			drew = this.updatePie(node, st, enabled, version) || drew;
 		}
+		this.syncedFor = { version, nodes, length: nodes.length, complete };
 		if (drew) this.renderer.changed();
 	}
 
