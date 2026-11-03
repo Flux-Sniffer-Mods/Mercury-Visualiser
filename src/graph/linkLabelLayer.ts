@@ -66,6 +66,7 @@ const ALONG = 0.62;
 const NEAR_NAMES_MIN_LENGTH = 240;
 /** After a zoom step, wait this long (ms) before adding labels, so they don't pop in and out mid-zoom. */
 const SETTLE_MS = 260;
+const SETTLE_FRAMES = 4;
 /** How quickly labels fade in and out (ms; about three times this to finish). */
 const FADE_MS = 90;
 
@@ -181,6 +182,8 @@ export class LinkLabelLayer {
 	private state = new Map<PixiText, LabelState>();
 	private lastScale = 0;
 	private zoomedAt = -Infinity;
+	/** Frames drawn since the zoom last changed. */
+	private framesSinceZoom = Infinity;
 	private lastFrameAt = 0;
 
 	constructor(private renderer: CoreGraphRenderer, private host: LinkLabelHost) {}
@@ -216,9 +219,16 @@ export class LinkLabelLayer {
 		const now = performance.now();
 		const dt = this.lastFrameAt ? Math.min(100, Math.max(1, now - this.lastFrameAt)) : 16;
 		this.lastFrameAt = now;
-		if (this.lastScale > 0 && Math.abs(view.scale - this.lastScale) > this.lastScale * 0.0005) this.zoomedAt = now;
+		if (this.lastScale > 0 && Math.abs(view.scale - this.lastScale) > this.lastScale * 0.0005) {
+			this.zoomedAt = now;
+			this.framesSinceZoom = 0;
+		} else {
+			this.framesSinceZoom++;
+		}
 		this.lastScale = view.scale;
-		const settling = now - this.zoomedAt < SETTLE_MS;
+		// Settled once the zoom has held still for a moment and for a few frames (slow devices
+		// can take longer than that moment to draw one frame).
+		const settling = now - this.zoomedAt < SETTLE_MS || this.framesSinceZoom < SETTLE_FRAMES;
 		const prior = (item: Labelled, slot: number): LabelState | undefined => {
 			const text = this.texts.get(item.link)?.[slot];
 			const st = text ? this.state.get(text) : undefined;
