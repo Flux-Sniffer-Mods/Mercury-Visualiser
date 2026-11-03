@@ -64,6 +64,10 @@ const CELL = 9;
 const ALONG = 0.62;
 /** Lines at least this long on screen get their labels next to the names at each end. */
 const NEAR_NAMES_MIN_LENGTH = 240;
+/** After a zoom step, wait this long (ms) before adding labels, so they don't pop in and out mid-zoom. */
+const SETTLE_MS = 260;
+/** How quickly labels fade in and out (ms; about three times this to finish). */
+const FADE_MS = 90;
 
 interface Candidate {
 	item: Labelled;
@@ -80,6 +84,10 @@ interface Candidate {
 	/** Only used when neither end of the line could take a label. */
 	fallback?: boolean;
 	hot: boolean;
+	/** 0 = the hovered note's lines, 1 = labels already showing, 2 = new labels. */
+	tier: number;
+	/** Which of `offsets` it used last frame, or -1 if it wasn't showing. */
+	prevOffset: number;
 	/** Labels sharing this key are shown once (a fan of same-label lines from one note). */
 	fan: string;
 	priority: number;
@@ -127,6 +135,17 @@ interface Labelled {
 	/** The busier end of the line, where its siblings fan out from. */
 	hub: CoreGraphNode;
 	other: CoreGraphNode;
+	/** Labelled next to the names (true) or along the middle; switches with some slack, never mid-zoom. */
+	nearNames?: boolean;
+}
+
+interface LabelState {
+	/** How visible it is right now (eases towards its target). */
+	alpha: number;
+	/** Which offset it sat at last frame. */
+	offset: number;
+	/** Placed in the last frame. */
+	placed: boolean;
 }
 
 /**
@@ -138,7 +157,10 @@ interface Labelled {
  *   label out along the line, away from the busy end where lines bunch up;
  * - a label is never drawn over another label or a note's name;
  * - a fan of lines with the same label from one note is labelled once;
- * - only lines on screen are labelled, nearest the middle first, up to a limit.
+ * - only lines on screen are labelled, nearest the middle first, up to a limit;
+ * - labels stay put: one that is showing keeps its place for as long as it
+ *   fits, new labels wait until zooming stops, and labels fade in and out
+ *   instead of popping.
  */
 export class LinkLabelLayer {
 	private layer: PixiContainer | null = null;
@@ -155,6 +177,11 @@ export class LinkLabelLayer {
 	private font = "";
 	private sample: PixiText | null = null;
 	private sampleFrame = 0;
+	/** Per label: where it sat last frame and how visible it is now. */
+	private state = new Map<PixiText, LabelState>();
+	private lastScale = 0;
+	private zoomedAt = -Infinity;
+	private lastFrameAt = 0;
 
 	constructor(private renderer: CoreGraphRenderer, private host: LinkLabelHost) {}
 
@@ -185,6 +212,24 @@ export class LinkLabelLayer {
 		const cy = screenH / 2;
 		const nearNames = this.host.placement() === "names";
 
+		// While zooming, labels already showing stay; new ones wait until it stops.
+		const now = performance.now();
+		const dt = this.lastFrameAt ? Math.min(100, Math.max(1, now - this.lastFrameAt)) : 16;
+		this.lastFrameAt = now;
+		if (this.lastScale > 0 && Math.abs(view.scale - this.lastScale) > this.lastScale * 0.0005) this.zoomedAt = now;
+		this.lastScale = view.scale;
+		const settling = now - this.zoomedAt < SETTLE_MS;
+		const prior = (item: Labelled, slot: number): LabelState | undefined => {
+			const text = this.texts.get(item.link)?.[slot];
+			const st = text ? this.state.get(text) : undefined;
+			return st?.placed ? st : undefined;
+		};
+		const push = (c: Omit<Candidate, "tier" | "prevOffset">) => {
+			const st = prior(c.item, c.slot);
+			if (!st && !c.hot && settling) return;
+			candidates.push({ ...c, tier: c.hot ? 0 : st ? 1 : 2, prevOffset: st ? st.offset : -1 });
+		};
+
 		// Candidates, in screen space: the hovered note's lines first, then nearest the middle.
 		const candidates: Candidate[] = [];
 		// Quick reject in graph space: lines wholly to one side of the view.
@@ -209,15 +254,24 @@ export class LinkLabelLayer {
 			const ps = toScreen(hub.x, hub.y);
 			const pt = toScreen(other.x, other.y);
 			const length = Math.hypot(pt.x - ps.x, pt.y - ps.y);
-			if (!(length >= MIN_SCREEN_LENGTH)) continue;
+			// A label already showing may stay on a slightly shorter line, so it doesn't blink at the limit.
+			const showing = !!(prior(item, 0) || prior(item, 1) || prior(item, 2));
+			if (!(length >= (showing ? MIN_SCREEN_LENGTH * 0.75 : MIN_SCREEN_LENGTH))) continue;
 			const ux = (pt.x - ps.x) / length;
 			const uy = (pt.y - ps.y) / length;
 
-			if (!nearNames || length < NEAR_NAMES_MIN_LENGTH) {
+			// Middle or next to the names: switches with some slack either way, and never mid-zoom.
+			if (item.nearNames === undefined) item.nearNames = length >= NEAR_NAMES_MIN_LENGTH;
+			else if (!settling) {
+				if (item.nearNames && length < NEAR_NAMES_MIN_LENGTH * 0.8) item.nearNames = false;
+				else if (!item.nearNames && length > NEAR_NAMES_MIN_LENGTH * 1.2) item.nearNames = true;
+			}
+
+			if (!nearNames || !item.nearNames) {
 				// One label out along the line, away from the busier end.
 				const p = { x: ps.x + (pt.x - ps.x) * ALONG, y: ps.y + (pt.y - ps.y) * ALONG };
 				if (!onScreen(p, 40)) continue;
-				candidates.push({ item, slot: 2, at: p, ux, uy, offsets: [0], middle: true, hot, fan: `${hub.id}\0${item.label}`, priority: hot ? -1 : (p.x - cx) ** 2 + (p.y - cy) ** 2 });
+				push({ item, slot: 2, at: p, ux, uy, offsets: [0], middle: true, hot, fan: `${hub.id}\0${item.label}`, priority: (p.x - cx) ** 2 + (p.y - cy) ** 2 });
 				continue;
 			}
 
@@ -231,7 +285,7 @@ export class LinkLabelLayer {
 				any = true;
 				// Clear of the dot and any pie ring drawn around it.
 				const r = this.dotRadiusPx(end, view.scale) * 1.45;
-				candidates.push({
+				push({
 					item,
 					slot,
 					at: pe,
@@ -241,14 +295,14 @@ export class LinkLabelLayer {
 					middle: false,
 					hot,
 					fan: `${end.id}\0${item.label}`,
-					priority: hot ? -1 : (pe.x - cx) ** 2 + (pe.y - cy) ** 2,
+					priority: (pe.x - cx) ** 2 + (pe.y - cy) ** 2,
 				});
 			}
 			// The middle of the part in view: used when neither end is on screen, or both ends are too crowded.
 			const seg = clipToRect(ps, pt, screenW, screenH);
 			if (!seg) continue;
 			const p = { x: (seg[0].x + seg[1].x) / 2, y: (seg[0].y + seg[1].y) / 2 };
-			candidates.push({
+			push({
 				item,
 				slot: 2,
 				at: p,
@@ -259,10 +313,11 @@ export class LinkLabelLayer {
 				fallback: any,
 				hot,
 				fan: `${hub.id}\0${other.id}`,
-				priority: hot ? -0.5 : (p.x - cx) ** 2 + (p.y - cy) ** 2 + screenW * screenH,
+				priority: (p.x - cx) ** 2 + (p.y - cy) ** 2 + screenW * screenH,
 			});
 		}
-		candidates.sort((a, b) => a.priority - b.priority);
+		// The hovered note's lines first, then labels already showing (so they keep their places), then new ones.
+		candidates.sort((a, b) => a.tier - b.tier || a.priority - b.priority);
 
 		// Screen-space occupancy, so labels don't land on each other or on note names.
 		const taken = new Set<number>();
@@ -272,15 +327,14 @@ export class LinkLabelLayer {
 				for (let gy = Math.floor(y0 / CELL); gy <= Math.floor(y1 / CELL); gy++) taken.add(key(gx, gy));
 			}
 		};
-		if (fade > 0.1) {
-			for (const n of r.nodes) {
-				const t = n.text;
-				if (!t || !t.visible || t.alpha < 0.2 || n.x < view.x0 || n.x > view.x1 || n.y < view.y0 || n.y > view.y1) continue;
-				const w = (t as unknown as { width: number }).width * view.scale;
-				const h = (t as unknown as { height: number }).height * view.scale;
-				const p = toScreen(t.x, t.y);
-				markRect(p.x - w / 2, p.y, p.x + w / 2, p.y + h);
-			}
+		// Every note name on screen counts, however faded: a name that's fading in mustn't suddenly push labels out.
+		for (const n of r.nodes) {
+			const t = n.text;
+			if (!t || t.visible === false || n.x < view.x0 || n.x > view.x1 || n.y < view.y0 || n.y > view.y1) continue;
+			const w = (t as unknown as { width: number }).width * view.scale;
+			const h = (t as unknown as { height: number }).height * view.scale;
+			const p = toScreen(t.x, t.y);
+			markRect(p.x - w / 2, p.y, p.x + w / 2, p.y + h);
 		}
 
 		// A little smaller than the Graph view's own note names.
@@ -289,6 +343,8 @@ export class LinkLabelLayer {
 
 		const max = this.host.maxLabels();
 		const used = new Set<PixiText>();
+		/** Labels placed this frame → which offset, and whether they belong to the hovered note. */
+		const placedNow = new Map<PixiText, { offset: number; hot: boolean }>();
 		const fans = new Set<string>();
 		const placedItems = new Set<Labelled>();
 		const mode = this.host.labelColourMode();
@@ -326,8 +382,12 @@ export class LinkLabelLayer {
 			const nx = dy * (h / 2);
 			const ny = -dx * (h / 2);
 			let placedAt: { x: number; y: number } | null = null;
+			let placedOffset = -1;
 			let cells: number[] = [];
-			for (const off of cand.offsets) {
+			// A label already showing only tries the place it's in: it stays there or fades out, it never jumps.
+			const tries = cand.prevOffset >= 0 && cand.prevOffset < cand.offsets.length ? [cand.prevOffset] : cand.offsets.map((_, i) => i);
+			for (const oi of tries) {
+				const off = cand.offsets[oi];
 				const p = { x: cand.at.x + cand.ux * off, y: cand.at.y + cand.uy * off };
 				const s0 = -anchorX * w;
 				const s1 = (1 - anchorX) * w;
@@ -347,6 +407,7 @@ export class LinkLabelLayer {
 				}
 				if (!blocked) {
 					placedAt = p;
+					placedOffset = oi;
 					cells = tryCells;
 					break;
 				}
@@ -369,34 +430,58 @@ export class LinkLabelLayer {
 			const world = m.applyInverse(placedAt);
 			text.position.set(world.x, world.y);
 			text.rotation = angle;
-			text.alpha = hot ? 1 : fade * 0.85;
-			text.visible = true;
 			used.add(text);
-			signature += `${Math.round(placedAt.x)},${Math.round(placedAt.y)},${Math.round(text.alpha * 20)};`;
+			placedNow.set(text, { offset: placedOffset, hot });
+			signature += `${Math.round(placedAt.x)},${Math.round(placedAt.y)};`;
 		}
 
+		// Fade every label towards where it should be: in if placed, out if not.
+		const ease = 1 - Math.exp(-dt / FADE_MS);
+		let animating = false;
 		let total = 0;
 		for (const [link, slots] of this.texts) {
+			let anyShowing = false;
 			for (let i = 0; i < slots.length; i++) {
 				const t = slots[i];
 				if (!t) continue;
 				total++;
-				if (!used.has(t)) t.visible = false;
+				const placed = placedNow.get(t);
+				const st = this.state.get(t) ?? { alpha: 0, offset: -1, placed: false };
+				st.placed = !!placed;
+				if (placed) st.offset = placed.offset;
+				const target = placed ? (placed.hot ? 1 : fade * 0.85) : 0;
+				st.alpha += (target - st.alpha) * ease;
+				if (Math.abs(target - st.alpha) < 0.01) st.alpha = target;
+				else animating = true;
+				this.state.set(t, st);
+				t.alpha = st.alpha;
+				t.visible = st.alpha > 0.005;
+				if (t.visible) anyShowing = true;
 			}
-			if (total > max * 4 && !slots.some((t) => t && used.has(t))) {
-				for (const t of slots) t?.destroy();
+			if (total > max * 4 && !anyShowing) {
+				for (const t of slots) {
+					if (!t) continue;
+					this.state.delete(t);
+					t.destroy();
+				}
 				this.texts.delete(link);
 			}
 		}
 
 		this.layer!.visible = true;
-		// The Graph view only redraws while something moves; ask for one more frame if labels moved.
+		// The Graph view only redraws while something moves: ask for more frames while labels
+		// move or fade, and until zooming has settled so the waiting labels get their turn.
 		const changed = signature !== this.lastSignature;
 		this.lastSignature = signature;
-		return changed;
+		return changed || animating || settling;
 	}
 
 	private hide(): boolean {
+		// Start from nothing next time, so labels fade back in.
+		for (const st of this.state.values()) {
+			st.alpha = 0;
+			st.placed = false;
+		}
 		if (this.layer?.visible) {
 			this.layer.visible = false;
 			this.lastSignature = "";
@@ -443,15 +528,14 @@ export class LinkLabelLayer {
 		} else if (text.text !== label) {
 			text.text = label;
 		}
-		// Swap the estimate for the real size, now the text exists.
-		const sx = Math.abs(text.scale.x) || 1;
-		const sy = Math.abs(text.scale.y) || 1;
-		const real = { w: (text as unknown as { width: number }).width / sx, h: (text as unknown as { height: number }).height / sy };
-		if (real.w > 0 && real.h > 0) this.sizes.set(label, real);
 		return text;
 	}
 
-	/** A label's size in the label style, before scaling: measured once, then remembered. */
+	/**
+	 * A label's size in the label style, before scaling: measured once, then
+	 * remembered. Always this same measure (never swapped for the drawn text's
+	 * size), so a label's space doesn't change from one frame to the next.
+	 */
 	private sizeOf(label: string): { w: number; h: number } {
 		const known = this.sizes.get(label);
 		if (known) return known;
@@ -505,6 +589,7 @@ export class LinkLabelLayer {
 		(this.layer as unknown as { name: string }).name = LAYER_NAME;
 		hanger.addChild(this.layer);
 		this.texts.clear();
+		this.state.clear();
 	}
 
 	/** Which lines have a label; rebuilt when the graph's lines or the labels change. */
@@ -534,6 +619,7 @@ export class LinkLabelLayer {
 	destroy(): void {
 		for (const slots of this.texts.values()) for (const text of slots) if (text && !text.destroyed) text.destroy();
 		this.texts.clear();
+		this.state.clear();
 		if (this.layer && !this.layer.destroyed) {
 			this.layer.parent?.removeChild(this.layer);
 			this.layer.destroy({ children: true });
